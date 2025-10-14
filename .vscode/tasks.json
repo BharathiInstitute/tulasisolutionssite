@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Flutter Analyze",
+			"type": "shell",
+			"command": "flutter analyze",
+			"isBackground": false,
+			"problemMatcher": ["$dart-build_runner"],
+			"group": { "kind": "build", "isDefault": true }
+		},
+		{
+			"label": "Flutter Analyze (one-off)",
+			"type": "shell",
+			"command": "flutter analyze",
+			"isBackground": false,
+			"problemMatcher": ["$dart-build_runner"],
+			"group": "build"
+		}
+	]
+}
