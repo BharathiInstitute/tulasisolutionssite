@@ -20,15 +20,9 @@ OverlayEntry createDropdownOverlay({
           // Tap anywhere outside the dropdown to close it. This sits behind the panel,
           // so taps inside the panel are handled by the panel content and won't trigger this.
           Positioned.fill(
-            child: Listener(
-              // Close on wheel scroll outside the dropdown so overlays don't feel sticky when scrolling the page.
-              onPointerSignal: (evt) {
-                onExit?.call();
-              },
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () => onExit?.call(),
-              ),
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => onExit?.call(),
             ),
           ),
           CompositedTransformFollower(

@@ -44,7 +44,7 @@ class _DesktopNavBarState extends State<DesktopNavBar> {
     // Debug
     // ignore: avoid_print
     print('DesktopNavBar: overlay closed');
-    _currentOverlay?.remove();
+    // Child owns removing the overlay entry; just clear references here.
     _currentOverlay = null;
     _markPrevClosed = null;
     _openIndex = null;
@@ -52,7 +52,13 @@ class _DesktopNavBarState extends State<DesktopNavBar> {
 
   @override
   void dispose() {
-    _onOverlayClosed();
+    // Ensure any lingering overlay is removed on dispose
+    try {
+      _currentOverlay?.remove();
+    } catch (_) {}
+    _currentOverlay = null;
+    _markPrevClosed = null;
+    _openIndex = null;
     super.dispose();
   }
 
@@ -262,11 +268,13 @@ class _NavItemState extends State<_NavItem> {
   }
 
   void _hideMenu() {
-    _entry?.remove();
+    if (!_menuOpen) return; // idempotent
+    try {
+      _entry?.remove();
+    } catch (_) {}
     _entry = null;
     _menuOpen = false;
     widget.onOverlayClosed();
-    widget.onToggleOpen();
   }
 
   @override
@@ -313,10 +321,14 @@ class _NavItemState extends State<_NavItem> {
           cursor: SystemMouseCursors.click,
           child: InkWell(
             onTap: () {
-              // Always perform navigation / selection first
-              widget.onTap();
-              // Close any open overlay to avoid lingering dropdowns over new route.
-              _hideMenu();
+              if (widget.hasChildren) {
+                // Toggle dropdown for items like Services instead of navigating away
+                _toggleOverlay(context);
+              } else {
+                // Navigate directly for leaf items
+                widget.onTap();
+                _hideMenu();
+              }
             },
             borderRadius: BorderRadius.circular(8),
             hoverColor: Colors.transparent,
@@ -347,54 +359,7 @@ class _NavItemState extends State<_NavItem> {
                   if (widget.hasChildren) ...[
                     const SizedBox(width: 4),
                     InkWell(
-                      onTap: () {
-                        // Toggle overlay only via explicit click on chevron
-                        if (_menuOpen) {
-                          _hideMenu();
-                        } else {
-                          // Build and show dropdown content
-                          final isServices = widget.title == 'Services' && (widget.children?.isNotEmpty ?? false);
-                          Widget content = isServices
-                              ? _ServicesMegaMenu(
-                                  groups: widget.children!,
-                                  onTap: (t) {
-                                    widget.onItemSelected(t);
-                                    _hideMenu();
-                                  },
-                                )
-                              : DefaultDropdownList(
-                                  title: widget.title,
-                                  items: widget.children ?? const [],
-                                  onTap: (t) {
-                                    widget.onItemSelected(t);
-                                    _hideMenu();
-                                  },
-                                );
-
-                          final constraints = (widget.title == 'Services')
-                              ? const BoxConstraints(minWidth: 240, maxWidth: 760, maxHeight: 420)
-                              : const BoxConstraints(minWidth: 220, maxWidth: 360, maxHeight: 420);
-
-                          final entry = createDropdownOverlay(
-                            targetLink: _link,
-                            constraints: constraints,
-                            onExit: _hideMenu,
-                            child: NotificationListener<ScrollNotification>(
-                              onNotification: (n) {
-                                // Close overlay on page scroll
-                                _hideMenu();
-                                return false;
-                              },
-                              child: content,
-                            ),
-                          );
-                          widget.onOverlayOpened(entry, _markSelfClosed);
-                          Overlay.of(context, rootOverlay: true).insert(entry);
-                          _entry = entry;
-                          _menuOpen = true;
-                          widget.onToggleOpen();
-                        }
-                      },
+                      onTap: () => _toggleOverlay(context),
                       borderRadius: BorderRadius.circular(6),
                       child: Icon(
                         Icons.keyboard_arrow_down_rounded,
@@ -410,5 +375,51 @@ class _NavItemState extends State<_NavItem> {
         ),
       ),
     );
+  }
+
+  void _toggleOverlay(BuildContext context) {
+    if (_menuOpen) {
+      _hideMenu();
+      return;
+    }
+    {
+      // Build and show dropdown content
+      final isServices = widget.title == 'Services' && (widget.children?.isNotEmpty ?? false);
+      Widget content = isServices
+          ? _ServicesMegaMenu(
+              groups: widget.children!,
+              onTap: (t) {
+                widget.onItemSelected(t);
+                _hideMenu();
+              },
+            )
+          : DefaultDropdownList(
+              title: widget.title,
+              items: widget.children ?? const [],
+              onTap: (t) {
+                widget.onItemSelected(t);
+                _hideMenu();
+              },
+            );
+
+      final constraints = (widget.title == 'Services')
+          ? const BoxConstraints(minWidth: 240, maxWidth: 760, maxHeight: 420)
+          : const BoxConstraints(minWidth: 220, maxWidth: 360, maxHeight: 420);
+
+      final entry = createDropdownOverlay(
+        targetLink: _link,
+        constraints: constraints,
+        onExit: _hideMenu,
+        child: content,
+      );
+      widget.onOverlayOpened(entry, _markSelfClosed);
+      Overlay.of(context, rootOverlay: true).insert(entry);
+      _entry = entry;
+      _menuOpen = true;
+      // Ensure parent highlights this as open
+      try {
+        widget.onToggleOpen();
+      } catch (_) {}
+    }
   }
 }

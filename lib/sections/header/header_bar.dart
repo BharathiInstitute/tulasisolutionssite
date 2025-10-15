@@ -96,16 +96,6 @@ class _HeaderBarState extends State<HeaderBar> {
                       controller: _searchCtrl,
                       onToggle: () => setState(() => _showSearch = !_showSearch),
                     ),
-                    const SizedBox(width: 8),
-                    ContactQuickActions(onTap: (id) {
-                      // Debug: log menu id before forwarding
-                      // ignore: avoid_print
-                      print('HeaderBar: tapped $id');
-                      widget.onMenuTap(id);
-                      widget.onActiveChange(id);
-                    }),
-                    const SizedBox(width: 8),
-                    const SocialIcons(),
                   ],
                 ),
               ),
