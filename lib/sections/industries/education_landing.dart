@@ -64,7 +64,7 @@ class _EducationPlaybookLandingState extends State<EducationPlaybookLanding>
 		final isDesktop = width >= 1024;
 	final isMobile = width < 600;
 		const gold = Color(0xFFD4AF37);
-		const mutedBg = Color(0xFFF7F8FA);
+		final mutedBg = Theme.of(context).scaffoldBackgroundColor;
 
 		final content = _HeroTextColumn(data: widget.data, isDesktop: isDesktop);
 		final mockup = _DeviceMockup(

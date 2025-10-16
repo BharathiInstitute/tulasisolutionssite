@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'pages/home_page.dart';
 import 'pages/industries_pages.dart';
 import 'pages/pricing_page.dart';
@@ -29,11 +30,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF0A2A5E), // Navy
-      brightness: Brightness.light,
-    );
-
     // Debug: print when building root
     // (Remove after diagnosing blank screen)
     // ignore: avoid_print
@@ -42,18 +38,18 @@ class MyApp extends StatelessWidget {
       title: 'Tulasi Solutions',
       debugShowCheckedModeBanner: false,
       scrollBehavior: const _AppScrollBehavior(),
-      theme: ThemeData(
-        useMaterial3: true,
-  colorScheme: colorScheme,
-  scaffoldBackgroundColor: const Color(0xFFD6F4D8), // Site-wide pastel green background
+      // Always use light theme to keep global background (c7f9cc) consistent
+      themeMode: ThemeMode.light,
+      theme: AppTheme.lightTheme.copyWith(
         appBarTheme: const AppBarTheme(centerTitle: false),
         scrollbarTheme: ScrollbarThemeData(
-          thumbVisibility: WidgetStatePropertyAll(true),
-          trackVisibility: WidgetStatePropertyAll(true),
+          thumbVisibility: const WidgetStatePropertyAll(true),
+          trackVisibility: const WidgetStatePropertyAll(true),
           radius: const Radius.circular(4),
-          thickness: WidgetStatePropertyAll(8.0),
+          thickness: const WidgetStatePropertyAll(8.0),
         ),
       ),
+      darkTheme: AppTheme.darkTheme,
       // Wrap HomePage in a widget that catches build errors to display instead of silent blank
       home: _HomeWithGuard(child: const HomePage()),
       routes: {

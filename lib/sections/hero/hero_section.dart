@@ -12,9 +12,6 @@ class HeroSection extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final isMobile = size.width < 700;
 
-    // Colors (light background variant)
-    const bgLightA = Color(0xFFF4F8FB); // very light blue/gray
-    const bgLightB = Color(0xFFE9F1F7); // soft blue tint
     const headlineColor = Color(0xFF0F2741); // dark navy for headlines
     const subheadColor = Color(0xFF4D6B88); // mid-slate blue for subhead
 
@@ -25,13 +22,7 @@ class HeroSection extends StatelessWidget {
         vertical: isMobile ? 80 : 110,
         horizontal: 16,
       ),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [bgLightA, bgLightB],
-        ),
-      ),
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1100),
@@ -45,7 +36,7 @@ class HeroSection extends StatelessWidget {
                     Text(
                       'Tulasi Solutions — One partner for Branding, Marketing, Websites, Software & Automation.',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.openSans(
                         color: headlineColor,
                         fontWeight: FontWeight.w700,
                         fontSize: 32,
@@ -57,7 +48,7 @@ class HeroSection extends StatelessWidget {
                     Text(
                       'Launch fast, grow steadily, and scale with clarity.',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.nunito(
+                      style: GoogleFonts.openSans(
                         color: subheadColor,
                         fontWeight: FontWeight.w600,
                         fontSize: 18,
@@ -83,7 +74,7 @@ class HeroSection extends StatelessWidget {
                           children: [
                             Text(
                               'Tulasi Solutions — One partner for Branding, Marketing, Websites, Software & Automation.',
-                              style: GoogleFonts.josefinSans(
+                              style: GoogleFonts.openSans(
                                 color: headlineColor,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 48,
@@ -94,7 +85,7 @@ class HeroSection extends StatelessWidget {
                             const SizedBox(height: 18),
                             Text(
                               'Launch fast, grow steadily, and scale with clarity.',
-                              style: GoogleFonts.nunito(
+                              style: GoogleFonts.openSans(
                                 color: subheadColor,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 20,
@@ -190,7 +181,7 @@ class _PrimaryGoldButtonState extends State<_PrimaryGoldButton> {
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
         child: Text(
           widget.label,
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.openSans(
             color: Colors.black,
             fontWeight: FontWeight.w700,
             fontSize: 14,
@@ -218,7 +209,7 @@ class _SecondaryGoldButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Text(
           label,
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.openSans(
             color: gold,
             fontWeight: FontWeight.w700,
             fontSize: 14,

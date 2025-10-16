@@ -51,7 +51,7 @@ class FaqFinalCtaSection extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(color: Colors.grey[200]),
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: CustomPaint(
         painter: _SubtleDotsPainter(color: Colors.black.withValues(alpha: 0.03)),
         child: Center(

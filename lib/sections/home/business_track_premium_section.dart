@@ -39,7 +39,7 @@ class BusinessTrackPremiumSection extends StatelessWidget {
 							Text(
 								'Choose Your Business Track',
 								textAlign: TextAlign.center,
-								style: GoogleFonts.josefinSans(
+								style: GoogleFonts.openSans(
 									fontSize: isMobile ? 28 : 40,
 									fontWeight: FontWeight.w700,
 									color: _headline,
@@ -53,7 +53,7 @@ class BusinessTrackPremiumSection extends StatelessWidget {
 								child: Text(
 									'We map your business to a proven industry playbook with ready workflows, assets, and KPIs.',
 									textAlign: TextAlign.center,
-									style: GoogleFonts.poppins(
+									style: GoogleFonts.openSans(
 										fontSize: isMobile ? 14 : 16,
 										color: _body,
 										height: 1.6,
@@ -115,7 +115,7 @@ class _FeaturesCard extends StatelessWidget {
 				children: [
 					Text(
 						'What\'s Included',
-						style: GoogleFonts.josefinSans(
+						style: GoogleFonts.openSans(
 							fontSize: isMobile ? 18 : 22,
 							fontWeight: FontWeight.w700,
 							color: BusinessTrackPremiumSection._sublabel,
@@ -156,7 +156,7 @@ class _FeatureRow extends StatelessWidget {
 				Expanded(
 					child: Text(
 						text,
-						style: GoogleFonts.poppins(
+							style: GoogleFonts.openSans(
 							fontSize: 14,
 							color: BusinessTrackPremiumSection._sublabel,
 							height: 1.6,
@@ -256,7 +256,7 @@ class _HoverCardState extends State<_HoverCard> {
 						Expanded(
 							child: Text(
 								widget.label,
-								style: GoogleFonts.poppins(
+								style: GoogleFonts.openSans(
 									fontSize: 15,
 									fontWeight: FontWeight.w600,
 									color: BusinessTrackPremiumSection._headline,
@@ -294,9 +294,9 @@ class _CtaButtonState extends State<_CtaButton> {
 					],
 				),
 				padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-				child: Text(
+					child: Text(
 					'Get My Track Plan',
-					style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+						style: GoogleFonts.openSans(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
 				),
 			),
 		);

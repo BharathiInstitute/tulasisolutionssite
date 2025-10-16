@@ -33,15 +33,15 @@ class BusinessAnalysisSection extends StatelessWidget {
 								const SizedBox(width: 10),
 								_iconCircle(FeatherIcons.barChart2),
 								const SizedBox(width: 12),
-								Flexible(
-									child: Text('360° Business Audit', textAlign: TextAlign.center, style: GoogleFonts.josefinSans(fontSize: isMobile ? 28 : 40, fontWeight: FontWeight.w700, color: _headline)),
-								),
+									Flexible(
+										child: Text('360° Business Audit', textAlign: TextAlign.center, style: GoogleFonts.openSans(fontSize: isMobile ? 28 : 40, fontWeight: FontWeight.w700, color: _headline)),
+									),
 							],
 						),
 						const SizedBox(height: 10),
 						ConstrainedBox(
 							constraints: const BoxConstraints(maxWidth: 920),
-							child: Text('We review every touchpoint—brand, funnel, operations—for hidden leaks.', textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: isMobile ? 14 : 16, color: _body, height: 1.6, fontWeight: FontWeight.w500)),
+							child: Text('We review every touchpoint—brand, funnel, operations—for hidden leaks.', textAlign: TextAlign.center, style: GoogleFonts.openSans(fontSize: isMobile ? 14 : 16, color: _body, height: 1.6, fontWeight: FontWeight.w500)),
 						),
 						const SizedBox(height: 28),
 						Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1000), child: _IncludedCard(isMobile: isMobile))),
@@ -86,7 +86,7 @@ class _IncludedCard extends StatelessWidget {
 			),
 			padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 22, vertical: isMobile ? 16 : 22),
 			child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-				Text('What\'s Included', style: GoogleFonts.josefinSans(fontSize: isMobile ? 18 : 22, fontWeight: FontWeight.w700, color: BusinessAnalysisSection._sublabel)),
+				Text('What\'s Included', style: GoogleFonts.openSans(fontSize: isMobile ? 18 : 22, fontWeight: FontWeight.w700, color: BusinessAnalysisSection._sublabel)),
 				const SizedBox(height: 12),
 				GridView.builder(
 					shrinkWrap: true,
@@ -123,7 +123,7 @@ class _FeatureRow extends StatelessWidget {
 			),
 			child: Icon(icon, color: BusinessAnalysisSection._headline, size: 20),
 		);
-		final textWidget = Text(text, style: GoogleFonts.poppins(fontSize: 14, color: BusinessAnalysisSection._sublabel, height: 1.6));
+		final textWidget = Text(text, style: GoogleFonts.openSans(fontSize: 14, color: BusinessAnalysisSection._sublabel, height: 1.6));
 		if (vertical) {
 			return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [circle, const SizedBox(height: 8), textWidget]);
 		}

@@ -33,7 +33,7 @@ class _ServicesPlaybookLandingState extends State<ServicesPlaybookLanding> with 
 	@override void dispose() { _float.dispose(); super.dispose(); }
 	@override Widget build(BuildContext context) {
 		final w = MediaQuery.sizeOf(context).width; final isDesktop = w >= 1024; final isMobile = w < 600;
-		const blue = Color(0xFF0D6EFD); const gold = Color(0xFFD4AF37); const dark = Color(0xFF212529); const bg = Color(0xFFF8F9FB);
+		const blue = Color(0xFF0D6EFD); const gold = Color(0xFFD4AF37); const dark = Color(0xFF212529); final bg = Theme.of(context).scaffoldBackgroundColor;
 		final text = _HeroText(data: widget.data, isDesktop: isDesktop, blue: blue, dark: dark);
 		final mock = _DeviceMockup(blue: blue, gold: gold, hovering: _hoverMock, controller: widget.reduceMotion ? null : _float, onHoverChanged: (v) => setState(() => _hoverMock = v));
 		return Container(color: bg, child: Column(children: [Padding(padding: EdgeInsets.symmetric(horizontal: isDesktop ? 48 : 20, vertical: isDesktop ? 40 : 24), child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1200), child: isDesktop ? Row(crossAxisAlignment: CrossAxisAlignment.center, children: [Expanded(child: text), const SizedBox(width: 24), Expanded(child: mock)]) : Column(crossAxisAlignment: isMobile ? CrossAxisAlignment.center : CrossAxisAlignment.start, children: [text, const SizedBox(height: 20), Transform.scale(scale: isMobile ? 0.98 : 0.92, child: mock)]))), Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 40), child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1200), child: _FeaturesGrid(items: widget.data.features))),]));

@@ -66,7 +66,7 @@ class _PrintingPlaybookLandingState extends State<PrintingPlaybookLanding>
 		const blue = Color(0xFF0D6EFD); // primary printing blue
 		const gold = Color(0xFFD4AF37); // secondary accent
 		const dark = Color(0xFF212529);
-		const bg = Color(0xFFF8F9FB);
+		final bg = Theme.of(context).scaffoldBackgroundColor;
 
 		final text = _HeroText(
 			data: widget.data,

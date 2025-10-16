@@ -10,7 +10,7 @@ class WhatWeDoSection extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final isMobile = size.width < 720;
 
-    const bg = Color(0xFFF8F8F8);
+  final bg = Theme.of(context).scaffoldBackgroundColor;
     const titleColor = Color(0xFF443F3F);
     const subtitleColor = Color(0xFF7D5B4C);
 
@@ -25,56 +25,56 @@ class WhatWeDoSection extends StatelessWidget {
     ];
 
     return Container(
-      color: bg,
+  color: bg,
       width: double.infinity,
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: isMobile ? 56 : 80),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1200),
-          child: isMobile
+      child: isMobile
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const _SectionHeadline(isMobile: true, titleColor: titleColor, subtitleColor: subtitleColor),
                     const SizedBox(height: 28),
                     _VerticalTimeline(steps: steps),
-                    const SizedBox(height: 40),
-                    const _WhatWeDoImage(maxHeight: 300, radius: 28),
                   ],
                 )
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Left text + timeline
+                    // Left: Headline/subtitle (text)
                     Expanded(
-                      flex: 6,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const _SectionHeadline(isMobile: false, titleColor: titleColor, subtitleColor: subtitleColor),
-                          const SizedBox(height: 32),
-                          _HorizontalTimeline(steps: steps),
-                        ],
+                      flex: 1,
+                      child: Padding(
+                        // Move text further down
+                        padding: const EdgeInsets.fromLTRB(93, 110, 24, 0),
+                        child: const _SectionHeadline(isMobile: false, titleColor: titleColor, subtitleColor: subtitleColor),
                       ),
                     ),
-                    const SizedBox(width: 28),
-                    // Right image (What We Do main image)
-                        Expanded(
-                          flex: 5,
-                          child: Align(
-                            alignment: Alignment.topRight,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 520),
-                              child: const _WhatWeDoImage(maxHeight: 420, radius: 32),
+                    // Right: Container with icons/cards
+                    Expanded(
+                      flex: 1,
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: FractionallySizedBox(
+                          widthFactor: 0.82, // narrower than the column width
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).cardColor,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: Colors.black.withValues(alpha: .06)),
+                              boxShadow: [
+                                BoxShadow(color: Colors.black.withValues(alpha: .08), blurRadius: 12, offset: const Offset(0, 6)),
+                              ],
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+                              child: _HorizontalTimeline(steps: steps),
                             ),
                           ),
                         ),
+                      ),
+                    ),
                   ],
                 ),
-        ),
-      ),
     );
   }
 }
@@ -90,7 +90,7 @@ class _SectionHeadline extends StatelessWidget {
         Text(
           'What We Do (End-to-End Stack)',
           textAlign: TextAlign.left,
-          style: GoogleFonts.lora(
+          style: GoogleFonts.openSans(
             fontSize: isMobile ? 30 : 40,
             fontWeight: FontWeight.w700,
             color: titleColor,
@@ -102,7 +102,7 @@ class _SectionHeadline extends StatelessWidget {
         Text(
           'Less vendor chaos, faster go-to-market.',
           textAlign: TextAlign.left,
-          style: GoogleFonts.nunito(
+          style: GoogleFonts.openSans(
             fontSize: isMobile ? 18 : 20,
             fontWeight: FontWeight.w600,
             color: subtitleColor,
@@ -114,48 +114,7 @@ class _SectionHeadline extends StatelessWidget {
   }
 }
 
-class _WhatWeDoImage extends StatelessWidget {
-  const _WhatWeDoImage({required this.maxHeight, required this.radius});
-  final double maxHeight; final double radius;
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final dpr = MediaQuery.of(context).devicePixelRatio;
-        // Target decode width ~ visible width * DPR, with sane bounds to avoid jank
-        final targetWidth = (constraints.maxWidth.isFinite
-                ? constraints.maxWidth
-                : 520.0) // fallback to our typical max width
-            * dpr;
-        final cacheWidth = targetWidth.clamp(300, 1600).round();
-
-        return AspectRatio(
-          aspectRatio: 1.25,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: Image.asset(
-              'assets/what.we.do.section.png',
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.medium,
-              cacheWidth: cacheWidth,
-              errorBuilder: (ctx, err, stack) => Image.asset(
-                'assets/home_page.png',
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.medium,
-                cacheWidth: cacheWidth,
-                errorBuilder: (ctx2, err2, stack2) => Container(
-                  color: Colors.grey.shade100,
-                  alignment: Alignment.center,
-                  child: Icon(Icons.broken_image, color: Colors.grey.shade400, size: 48),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
+// Note: Removed the decorative image widget as requested.
 
 class _HorizontalTimeline extends StatelessWidget {
   const _HorizontalTimeline({required this.steps});
@@ -163,41 +122,18 @@ class _HorizontalTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFD4AF37);
-    return Stack(
-      clipBehavior: Clip.none,
+    return Wrap(
+      spacing: 14,
+      runSpacing: 18,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      alignment: WrapAlignment.center,
       children: [
-        // Accent line behind steps
-        Positioned.fill(
-          top: 46,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Container(
-              height: 2,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [gold.withValues(alpha: 0.15), gold.withValues(alpha: 0.45), gold.withValues(alpha: 0.15)],
-                ),
-              ),
-            ),
+        for (int i = 0; i < steps.length; i++)
+          _StepCard(
+            data: steps[i],
+            showArrow: false,
+            direction: Axis.horizontal,
           ),
-        ),
-        Wrap(
-          spacing: 14,
-          runSpacing: 18,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          alignment: WrapAlignment.center,
-          children: [
-            for (int i = 0; i < steps.length; i++)
-              _StepCard(
-                data: steps[i],
-                showArrow: i < steps.length - 1,
-                direction: Axis.horizontal,
-              ),
-          ],
-        ),
       ],
     );
   }
@@ -214,7 +150,7 @@ class _VerticalTimeline extends StatelessWidget {
         for (int i = 0; i < steps.length; i++)
           _StepCard(
             data: steps[i],
-            showArrow: i < steps.length - 1,
+            showArrow: false,
             direction: Axis.vertical,
           ),
       ],
@@ -283,7 +219,7 @@ class _StepCardState extends State<_StepCard> {
           const SizedBox(height: 8),
           Text(
             widget.data.label,
-            style: GoogleFonts.playfairDisplay(
+            style: GoogleFonts.openSans(
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: gold,
@@ -294,26 +230,12 @@ class _StepCardState extends State<_StepCard> {
       ),
     );
 
-    final arrow = widget.showArrow
-        ? (isHorizontal
-            ? const Icon(Icons.arrow_forward_ios, size: 16, color: Color(0xFFD4AF37))
-            : const Icon(Icons.arrow_downward, size: 18, color: Color(0xFFD4AF37)))
-        : const SizedBox.shrink();
-
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: Padding(
         padding: EdgeInsets.only(bottom: isHorizontal ? 0 : 16),
-        child: isHorizontal
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [card, const SizedBox(width: 8), arrow, const SizedBox(width: 8)],
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [card, const SizedBox(height: 8), arrow, const SizedBox(height: 8)],
-              ),
+        child: card,
       ),
     );
   }

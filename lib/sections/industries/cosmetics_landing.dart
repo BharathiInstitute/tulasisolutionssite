@@ -67,7 +67,7 @@ class _CosmeticsPlaybookLandingState extends State<CosmeticsPlaybookLanding>
 		const rose = Color(0xFFE91E63); // primary accent
 		const gold = Color(0xFFD4AF37); // secondary accent
 		const dark = Color(0xFF111111);
-		const bg = Color(0xFFFAF6F8);
+		final bg = Theme.of(context).scaffoldBackgroundColor;
 
 		final text = _HeroText(
 			data: widget.data,
@@ -88,7 +88,7 @@ class _CosmeticsPlaybookLandingState extends State<CosmeticsPlaybookLanding>
 			child: AnimatedContainer(
 				duration: const Duration(milliseconds: 260),
 				curve: Curves.easeOutCubic,
-				decoration: const BoxDecoration(color: bg),
+				decoration: BoxDecoration(color: bg),
 				padding: EdgeInsets.symmetric(
 					vertical: isMobile ? 48 : 80,
 					horizontal: isDesktop ? 72 : 28,

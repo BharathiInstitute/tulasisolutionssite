@@ -80,7 +80,7 @@ class _TextColumn extends StatelessWidget {
 						const SizedBox(width: 10),
 						Text(
 							'First Impressions, Done Right',
-							style: GoogleFonts.josefinSans(
+							style: GoogleFonts.openSans(
 								color: BusinessCardHeroSection._headline,
 								fontSize: isDesktop ? 38 : 28,
 								fontWeight: FontWeight.w800,
@@ -92,7 +92,7 @@ class _TextColumn extends StatelessWidget {
 				const SizedBox(height: 10),
 				Text(
 					'Professional, print-ready cards aligned with your brand identity.',
-					style: GoogleFonts.poppins(
+					style: GoogleFonts.openSans(
 						color: BusinessCardHeroSection._body,
 						fontSize: isDesktop ? 16 : 14,
 						height: 1.6,
@@ -140,16 +140,16 @@ class _Feature extends StatelessWidget {
 						child: Icon(icon, size: 18, color: BusinessCardHeroSection._headline),
 					),
 					const SizedBox(width: 10),
-					Expanded(
-						child: Text(
-							text,
-							style: GoogleFonts.poppins(
-								fontSize: 14,
-								color: BusinessCardHeroSection._subtle,
-								height: 1.5,
+						Expanded(
+							child: Text(
+								text,
+								style: GoogleFonts.openSans(
+									fontSize: 14,
+									color: BusinessCardHeroSection._subtle,
+									height: 1.5,
+								),
 							),
 						),
-					),
 				],
 			),
 		);
@@ -236,7 +236,7 @@ class _MockCard extends StatelessWidget {
 								const SizedBox(width: 8),
 								Text(
 									'Your Brand',
-									style: GoogleFonts.poppins(
+									style: GoogleFonts.openSans(
 										fontSize: 12,
 										fontWeight: FontWeight.w600,
 										color: BusinessCardHeroSection._headline,
@@ -316,10 +316,10 @@ class _PrimaryCtaState extends State<_PrimaryCta> {
 						borderRadius: BorderRadius.circular(10),
 						boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))],
 					),
-					child: Text(
-						widget.label,
-						style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
-					),
+						child: Text(
+							widget.label,
+							style: GoogleFonts.openSans(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+						),
 				),
 			),
 		);
@@ -352,10 +352,10 @@ class _GhostCtaState extends State<_GhostCta> {
 						borderRadius: BorderRadius.circular(10),
 						border: Border.all(color: border),
 					),
-					child: Text(
-						widget.label,
-						style: GoogleFonts.poppins(color: const Color(0xFF0F172A), fontWeight: FontWeight.w700, fontSize: 14),
-					),
+						child: Text(
+							widget.label,
+							style: GoogleFonts.openSans(color: const Color(0xFF0F172A), fontWeight: FontWeight.w700, fontSize: 14),
+						),
 				),
 			),
 		);

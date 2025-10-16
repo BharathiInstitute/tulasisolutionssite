@@ -24,7 +24,7 @@ class CustomerJourneyHeroSection extends StatelessWidget {
 							crossAxisAlignment: CrossAxisAlignment.start,
 							children: [
 								Text('Customer Journey Mapping',
-									style: GoogleFonts.josefinSans(
+									style: GoogleFonts.openSans(
 										fontSize: isWide ? 38 : 30,
 										fontWeight: FontWeight.w800,
 										color: Colors.white,
@@ -32,7 +32,7 @@ class CustomerJourneyHeroSection extends StatelessWidget {
 								const SizedBox(height: 14),
 								Text(
 									'Visualize stages and attach automations at key touchpoints to reduce drop-offs.',
-									style: GoogleFonts.poppins(
+									style: GoogleFonts.openSans(
 										color: Colors.white70,
 										fontSize: 14,
 										height: 1.5,

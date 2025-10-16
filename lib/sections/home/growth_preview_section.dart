@@ -53,7 +53,7 @@ class GrowthPreviewSection extends StatelessWidget {
                   children: [
                     Text(
                       'Growth Dashboard Preview',
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.openSans(
                         fontSize: isMobile ? 26 : 34,
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
@@ -63,7 +63,7 @@ class GrowthPreviewSection extends StatelessWidget {
                     const SizedBox(height: 10),
                     Text(
                       'Monthly reviews, strategy planning and sales targets unified. Track progress & improvements over time.',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.openSans(
                         fontSize: isMobile ? 14 : 16,
                         color: Colors.white.withValues(alpha: 0.75),
                         height: 1.55,

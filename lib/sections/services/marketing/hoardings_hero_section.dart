@@ -68,14 +68,14 @@ class _LeftText extends StatelessWidget {
 						const SizedBox(width: 10),
 						Flexible(
 							child: Text('Big Message, Big Impact',
-								style: GoogleFonts.josefinSans(color: HoardingsHeroSection._headline, fontSize: isDesktop ? 40 : 28, fontWeight: FontWeight.w800, letterSpacing: 0.2)),
+								style: GoogleFonts.openSans(color: HoardingsHeroSection._headline, fontSize: isDesktop ? 40 : 28, fontWeight: FontWeight.w800, letterSpacing: 0.2)),
 						),
 					],
 				),
 				const SizedBox(height: 10),
 				Text(
 					'High-visibility outdoor ads designed for maximum readability.',
-					style: GoogleFonts.poppins(color: HoardingsHeroSection._body.withValues(alpha: 0.92), fontSize: isDesktop ? 16 : 14, height: 1.6, fontWeight: FontWeight.w500),
+					style: GoogleFonts.openSans(color: HoardingsHeroSection._body.withValues(alpha: 0.92), fontSize: isDesktop ? 16 : 14, height: 1.6, fontWeight: FontWeight.w500),
 				),
 				const SizedBox(height: 16),
 				const _Feature(text: 'Site mockups'),
@@ -110,7 +110,7 @@ class _Feature extends StatelessWidget {
 					child: const Icon(Icons.check_rounded, size: 18, color: Colors.white),
 				),
 				const SizedBox(width: 10),
-				Expanded(child: Text(text, style: GoogleFonts.poppins(fontSize: 14, height: 1.45, color: Colors.white.withValues(alpha: 0.95)))),
+				Expanded(child: Text(text, style: GoogleFonts.openSans(fontSize: 14, height: 1.45, color: Colors.white.withValues(alpha: 0.95)))),
 			]),
 		);
 	}
@@ -133,11 +133,11 @@ class _PrimaryCtaState extends State<_PrimaryCta> {
 			onExit: (_) => setState(() => _hover = false),
 			child: GestureDetector(
 				onTap: () {},
-				child: AnimatedContainer(
+					child: AnimatedContainer(
 					duration: const Duration(milliseconds: 150),
 					padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
 					decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10), boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))]),
-					child: Text(widget.label, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+						child: Text(widget.label, style: GoogleFonts.openSans(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
 				),
 			),
 		);
@@ -236,7 +236,7 @@ class _IconPill extends StatelessWidget {
 			child: Row(mainAxisSize: MainAxisSize.min, children: [
 				const Icon(Icons.check_circle, size: 16, color: Colors.white70),
 				const SizedBox(width: 6),
-				Text(label, style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+						Text(label, style: GoogleFonts.openSans(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
 			]),
 		);
 	}

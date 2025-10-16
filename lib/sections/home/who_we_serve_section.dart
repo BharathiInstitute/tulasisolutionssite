@@ -11,7 +11,7 @@ class WhoWeServeSection extends StatelessWidget {
     final isTablet = size.width < 1000 && size.width >= 700;
     final isMobile = size.width < 700;
 
-    const bg = Color(0xFFF8F8F8);
+  final bg = Theme.of(context).scaffoldBackgroundColor;
     const titleColor = Color(0xFF443F3F);
     const subtitleColor = Color(0xFF7D5B4C);
     const gold = Color(0xFFD4AF37);
@@ -28,9 +28,14 @@ class WhoWeServeSection extends StatelessWidget {
     final cols = isMobile ? 1 : (isTablet ? 2 : 3);
 
     return Container(
-      color: bg,
+  color: bg,
       width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: isMobile ? 80 : 100),
+      padding: EdgeInsets.fromLTRB(
+        isMobile ? 16 : 80, // left padding
+        isMobile ? 80 : 100,
+        isMobile ? 16 : 16, // reduce right padding on desktop to move container right
+        isMobile ? 80 : 100,
+      ),
       child: Align(
         alignment: Alignment.centerLeft,
         child: ConstrainedBox(
@@ -57,7 +62,7 @@ class WhoWeServeSection extends StatelessWidget {
                         Text(
                           'Who We Serve',
                           textAlign: TextAlign.left,
-                          style: GoogleFonts.lora(
+                          style: GoogleFonts.openSans(
                             fontSize: 26,
                             fontWeight: FontWeight.w700,
                             color: titleColor,
@@ -67,42 +72,56 @@ class WhoWeServeSection extends StatelessWidget {
                         Text(
                           'Ready playbooks per industry.',
                           textAlign: TextAlign.left,
-                          style: GoogleFonts.nunito(
+                          style: GoogleFonts.openSans(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                             color: subtitleColor,
                           ),
                         ),
                         const SizedBox(height: 28),
-                        GridView.builder(
-                          itemCount: industries.length,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: cols,
-                            mainAxisExtent: 180,
-                            crossAxisSpacing: 16,
-                            mainAxisSpacing: 16,
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: Colors.black.withValues(alpha: .06)),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withValues(alpha: .08), blurRadius: 12, offset: const Offset(0, 6)),
+                            ],
                           ),
-                          itemBuilder: (context, i) => _IndustryCard(data: industries[i]),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                            child: GridView.builder(
+                              itemCount: industries.length,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: cols,
+                                mainAxisExtent: 180,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                              ),
+                              itemBuilder: (context, i) => _IndustryCard(data: industries[i]),
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 24),
-                        const _WhoWeServeImage(maxHeight: 360, radius: 28),
                       ],
                     )
                   : Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Left: headline + grid
+                        // Left: headline/subtitle only (keep in original place)
                         Expanded(
-                          flex: 6,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                          flex: 1,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(96, 100, 24, 0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                               Text(
                                 'Who We Serve',
                                 textAlign: TextAlign.left,
-                                style: GoogleFonts.lora(
+                                style: GoogleFonts.openSans(
                                   fontSize: 30,
                                   fontWeight: FontWeight.w700,
                                   color: titleColor,
@@ -112,37 +131,46 @@ class WhoWeServeSection extends StatelessWidget {
                               Text(
                                 'Ready playbooks per industry.',
                                 textAlign: TextAlign.left,
-                                style: GoogleFonts.nunito(
+                                style: GoogleFonts.openSans(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w600,
                                   color: subtitleColor,
                                 ),
                               ),
-                              const SizedBox(height: 28),
-                              GridView.builder(
-                                itemCount: industries.length,
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: cols,
-                                  mainAxisExtent: 180,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 16,
-                                ),
-                                itemBuilder: (context, i) => _IndustryCard(data: industries[i]),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 28),
-                        // Right: main image anchored to the right edge
+                        const SizedBox(width: 72),
+                        // Right: move industry cards grid here (image removed)
                         Expanded(
-                          flex: 5,
+                          flex: 1,
                           child: Align(
                             alignment: Alignment.topRight,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 520),
-                              child: const _WhoWeServeImage(maxHeight: 480, radius: 32),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).cardColor,
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(color: Colors.black.withValues(alpha: .06)),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withValues(alpha: .08), blurRadius: 12, offset: const Offset(0, 6)),
+                                ],
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                                child: GridView.builder(
+                                  itemCount: industries.length,
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: cols,
+                                    mainAxisExtent: 180,
+                                    crossAxisSpacing: 16,
+                                    mainAxisSpacing: 16,
+                                  ),
+                                  itemBuilder: (context, i) => _IndustryCard(data: industries[i]),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -222,7 +250,7 @@ class _IndustryCardState extends State<_IndustryCard> {
               Text(
                 widget.data.label,
                 textAlign: TextAlign.center,
-                style: GoogleFonts.playfairDisplay(
+                style: GoogleFonts.openSans(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: gold,
@@ -264,35 +292,4 @@ class _AccentBlob extends StatelessWidget {
   }
 }
 
-class _WhoWeServeImage extends StatelessWidget {
-  const _WhoWeServeImage({required this.maxHeight, required this.radius});
-  final double maxHeight; final double radius;
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final dpr = MediaQuery.of(context).devicePixelRatio;
-        final targetWidth = (constraints.maxWidth.isFinite ? constraints.maxWidth : 520.0) * dpr;
-        final cacheWidth = targetWidth.clamp(300, 1600).round();
-
-        return AspectRatio(
-          aspectRatio: 1.0,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: Image.asset(
-              'assets/who.we.serve.section.png',
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.medium,
-              cacheWidth: cacheWidth,
-              errorBuilder: (ctx, err, stack) => Container(
-                color: Colors.grey.shade100,
-                alignment: Alignment.center,
-                child: Icon(Icons.broken_image, color: Colors.grey.shade400, size: 48),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
+// Image widget removed per request; grid moved to right column.

@@ -53,7 +53,7 @@ class BusinessManagerSection extends StatelessWidget {
 										child: Text(
 											'Your Dedicated Manager',
 											textAlign: TextAlign.center,
-											style: GoogleFonts.josefinSans(
+											style: GoogleFonts.openSans(
 												fontSize: isMobile ? 28 : 40,
 												fontWeight: FontWeight.w700,
 												color: _headline,
@@ -69,7 +69,7 @@ class BusinessManagerSection extends StatelessWidget {
 								child: Text(
 									'One point of contact to coordinate branding, dev, ads, and growth.',
 									textAlign: TextAlign.center,
-									style: GoogleFonts.poppins(
+									style: GoogleFonts.openSans(
 										fontSize: isMobile ? 14 : 16,
 										color: _body,
 										height: 1.6,
@@ -126,7 +126,7 @@ class _IncludedCard extends StatelessWidget {
 				children: [
 					Text(
 						'What\'s Included',
-						style: GoogleFonts.josefinSans(
+								style: GoogleFonts.openSans(
 							fontSize: isMobile ? 18 : 22,
 							fontWeight: FontWeight.w700,
 							color: BusinessManagerSection._sublabel,
@@ -178,7 +178,7 @@ class _FeatureTile extends StatelessWidget {
 				Expanded(
 					child: Text(
 						text,
-						style: GoogleFonts.poppins(
+									style: GoogleFonts.openSans(
 							fontSize: 14,
 							color: BusinessManagerSection._sublabel,
 							height: 1.6,
@@ -213,9 +213,9 @@ class _CtaButtonState extends State<_CtaButton> {
 					],
 				),
 				padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-				child: Text(
+					child: Text(
 					'Talk to Your Manager',
-					style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+						style: GoogleFonts.openSans(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
 				),
 			),
 		);

@@ -13,7 +13,7 @@ class HowItWorksSection extends StatelessWidget {
     final isTablet = size.width < 1100 && size.width >= 700;
     final isMobile = size.width < 700;
 
-    const bg = Color(0xFFF8F8F8);
+  final bg = Theme.of(context).scaffoldBackgroundColor;
     const titleColor = Color(0xFF443F3F);
     const subtitleColor = Color(0xFF7D5B4C);
 
@@ -25,7 +25,7 @@ class HowItWorksSection extends StatelessWidget {
     ];
 
     return Container(
-      color: bg,
+  color: bg,
       width: double.infinity,
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: isMobile ? 80 : 100),
       child: Center(
@@ -34,65 +34,76 @@ class HowItWorksSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                'How It Works',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.lora(
-                  fontSize: isMobile ? 26 : 30,
-                  fontWeight: FontWeight.w700,
-                  color: titleColor,
-                ),
-              ),
-              const SizedBox(height: 14),
-              // Newly added illustrative image under the heading
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final maxW = constraints.maxWidth;
-                  final double imgWidth = maxW.clamp(240, isMobile ? 420 : 560);
-                  return Semantics(
-                    label: 'Process phases illustration: Discover, Design, Deploy, Grow',
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                          child: Image.asset(
-                            'assets/how.it.works.section.png',
-                        width: imgWidth.toDouble(),
-                        fit: BoxFit.cover,
-                        filterQuality: FilterQuality.medium,
-                        // Provide a modest cacheWidth to avoid decoding huge source on web/mobile
-                        cacheWidth: (imgWidth * (MediaQuery.devicePixelRatioOf(context))).toInt().clamp(600, 1400),
-                            errorBuilder: (c, e, st) => Container(
-                              width: imgWidth.toDouble(),
-                              height: (imgWidth * 0.55),
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade200,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.grey.shade300),
+              if (!isMobile && !isTablet)
+                // Desktop: two columns — left text, right steps
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 1,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(0, 96, 24, 0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'How It Works',
+                              textAlign: TextAlign.left,
+                              style: GoogleFonts.openSans(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w700,
+                                color: titleColor,
                               ),
-                              child: const Text('Image missing', style: TextStyle(color: Colors.black54)),
                             ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Clear milestones & KPIs at each step.',
+                              textAlign: TextAlign.left,
+                              style: GoogleFonts.openSans(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: subtitleColor,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  );
-                },
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Clear milestones & KPIs at each step.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.nunito(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: subtitleColor,
+                    Expanded(
+                      flex: 1,
+                      child: _HorizontalSteps(steps: steps),
+                    ),
+                  ],
+                )
+              else ...[
+                // Tablet/Mobile: keep centered stacked layout
+                Text(
+                  'How It Works',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.openSans(
+                    fontSize: isMobile ? 26 : 30,
+                    fontWeight: FontWeight.w700,
+                    color: titleColor,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 28),
-              if (!isMobile && !isTablet)
-                _HorizontalSteps(steps: steps)
-              else if (isTablet)
-                _GridSteps(steps: steps)
-              else
-                _VerticalSteps(steps: steps),
+                const SizedBox(height: 14),
+                // Removed illustrative image per request
+                const SizedBox(height: 8),
+                Text(
+                  'Clear milestones & KPIs at each step.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.openSans(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: subtitleColor,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                if (isTablet)
+                  _GridSteps(steps: steps)
+                else
+                  _VerticalSteps(steps: steps),
+              ],
             ],
           ),
         ),
@@ -227,7 +238,7 @@ class _HowStepCardState extends State<_HowStepCard> with SingleTickerProviderSta
             position: _offset,
             child: Text(
               '${widget.index + 1}',
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.openSans(
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
                 color: gold,
@@ -265,7 +276,7 @@ class _HowStepCardState extends State<_HowStepCard> with SingleTickerProviderSta
           Text(
             widget.step.label,
             textAlign: TextAlign.center,
-            style: GoogleFonts.playfairDisplay(
+            style: GoogleFonts.openSans(
               fontSize: 16,
               fontWeight: FontWeight.w700,
               color: gold,
@@ -275,7 +286,7 @@ class _HowStepCardState extends State<_HowStepCard> with SingleTickerProviderSta
           Text(
             widget.step.desc,
             textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 12.5, color: Colors.black87),
+            style: GoogleFonts.openSans(fontSize: 12.5, color: Colors.black87),
           ),
         ],
       ),

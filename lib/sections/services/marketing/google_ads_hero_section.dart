@@ -59,7 +59,7 @@ class _TextCol extends StatelessWidget {
 						Expanded(
 							child: Text(
 								'High-Intent Traffic with Google Ads',
-								style: GoogleFonts.josefinSans(fontSize: 36, fontWeight: FontWeight.w800, color: Colors.white),
+								style: GoogleFonts.openSans(fontSize: 36, fontWeight: FontWeight.w800, color: Colors.white),
 							),
 						),
 					],
@@ -67,7 +67,7 @@ class _TextCol extends StatelessWidget {
 				const SizedBox(height: 10),
 				Text(
 					'Get in front of buyers searching right now. From Search to Performance Max—optimized for ROAS, not just clicks.',
-					style: GoogleFonts.poppins(fontSize: 14, height: 1.6, color: Colors.white.withValues(alpha: 0.95)),
+					style: GoogleFonts.openSans(fontSize: 14, height: 1.6, color: Colors.white.withValues(alpha: 0.95)),
 				),
 				const SizedBox(height: 16),
 				const _Bullet(text: 'Keyword strategy aligned with real buyer intent'),
@@ -96,7 +96,7 @@ class _Bullet extends StatelessWidget {
 						decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
 					),
 					const SizedBox(width: 10),
-					Expanded(child: Text(text, style: GoogleFonts.poppins(fontSize: 14, height: 1.45, color: Colors.white.withValues(alpha: 0.98)))),
+					Expanded(child: Text(text, style: GoogleFonts.openSans(fontSize: 14, height: 1.45, color: Colors.white.withValues(alpha: 0.98)))),
 				],
 			),
 		);
@@ -135,11 +135,11 @@ class _PrimaryCtaState extends State<_PrimaryCta> {
 			onExit: (_) => setState(() => _hover = false),
 			child: GestureDetector(
 				onTap: () {},
-				child: AnimatedContainer(
+					child: AnimatedContainer(
 					duration: const Duration(milliseconds: 150),
 					padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
 					decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10), boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 6))]),
-					child: Text(widget.label, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+						child: Text(widget.label, style: GoogleFonts.openSans(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
 				),
 			),
 		);
@@ -163,11 +163,11 @@ class _SecondaryCtaState extends State<_SecondaryCta> {
 			onExit: (_) => setState(() => _hover = false),
 			child: GestureDetector(
 				onTap: () {},
-				child: AnimatedContainer(
+					child: AnimatedContainer(
 					duration: const Duration(milliseconds: 150),
 					padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
 					decoration: BoxDecoration(border: Border.all(color: border), borderRadius: BorderRadius.circular(10)),
-					child: Text(widget.label, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+						child: Text(widget.label, style: GoogleFonts.openSans(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
 				),
 			),
 		);
@@ -213,7 +213,7 @@ class _BoardHeader extends StatelessWidget {
 	Widget build(BuildContext context) {
 		return Row(
 			children: [
-				Text('Google Ads Overview', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w700)),
+				Text('Google Ads Overview', style: GoogleFonts.openSans(color: Colors.white, fontWeight: FontWeight.w700)),
 				const Spacer(),
 				_Tag('Search'),
 				const SizedBox(width: 6),
@@ -233,7 +233,7 @@ class _Tag extends StatelessWidget {
 		return Container(
 			padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
 			decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(999)),
-			child: Text(t, style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+				child: Text(t, style: GoogleFonts.openSans(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
 		);
 	}
 }
@@ -271,9 +271,9 @@ class _MetricCard extends StatelessWidget {
 					const SizedBox(width: 10),
 					Expanded(
 						child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-							Text(title, style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12)),
+							Text(title, style: GoogleFonts.openSans(color: Colors.white70, fontSize: 12)),
 							const SizedBox(height: 4),
-							Text(value, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w700)),
+							Text(value, style: GoogleFonts.openSans(color: Colors.white, fontWeight: FontWeight.w700)),
 						]),
 					),
 				],
@@ -338,7 +338,7 @@ class _RowBase extends StatelessWidget {
 	final String conv;
 	@override
 	Widget build(BuildContext context) {
-		final style = GoogleFonts.poppins(color: Colors.white.withValues(alpha: isHeader ? 0.7 : 0.95), fontWeight: isHeader ? FontWeight.w700 : FontWeight.w600);
+		final style = GoogleFonts.openSans(color: Colors.white.withValues(alpha: isHeader ? 0.7 : 0.95), fontWeight: isHeader ? FontWeight.w700 : FontWeight.w600);
 		return Container(
 			padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
 			decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)))),

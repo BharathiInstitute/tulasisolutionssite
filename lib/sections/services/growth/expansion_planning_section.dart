@@ -51,9 +51,9 @@ class _Left extends StatelessWidget {
 				children: [
 					Positioned(right: 0, top: 0, child: const CornerLogo(icon: Icons.public)),
 					Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-				Text('Scale With Confidence', style: GoogleFonts.josefinSans(fontSize: isDesktop ? 32 : 24, fontWeight: FontWeight.w800)),
+				Text('Scale With Confidence', style: GoogleFonts.openSans(fontSize: isDesktop ? 32 : 24, fontWeight: FontWeight.w800)),
 				const SizedBox(height: 12),
-				Text('We prepare you for multi-store, new locations, or new products.', style: GoogleFonts.poppins(fontSize: isDesktop ? 16 : 14, height: 1.6)),
+				Text('We prepare you for multi-store, new locations, or new products.', style: GoogleFonts.openSans(fontSize: isDesktop ? 16 : 14, height: 1.6)),
 				const SizedBox(height: 20),
 				const _Bullet('Readiness checklist (ops, HR, inventory)'),
 				const _Bullet('Launch toolkit (branding, landing pages, ads)'),
@@ -99,7 +99,7 @@ class _Right extends StatelessWidget {
 					),
 				),
 				const SizedBox(height: 16),
-				Text('Animation of one store → multiple pins on map', style: GoogleFonts.poppins(fontSize: 14, fontStyle: FontStyle.italic, color: Colors.white70)),
+				Text('Animation of one store → multiple pins on map', style: GoogleFonts.openSans(fontSize: 14, fontStyle: FontStyle.italic, color: Colors.white70)),
 			]),
 		);
 	}
@@ -115,7 +115,7 @@ class _Bullet extends StatelessWidget {
 			child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
 				const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.check_circle, size: 18, color: Colors.white70)),
 				const SizedBox(width: 10),
-				Expanded(child: Text(text, style: GoogleFonts.poppins(fontSize: 14))),
+				Expanded(child: Text(text, style: GoogleFonts.openSans(fontSize: 14))),
 			]),
 		);
 	}
