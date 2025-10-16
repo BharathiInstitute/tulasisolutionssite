@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import '../header/data/menu_data.dart';
 import '../header/header_bar.dart';
 import '../header/mobile_drawer.dart';
@@ -14,8 +15,21 @@ class SiteScaffold extends StatefulWidget {
 
 class _SiteScaffoldState extends State<SiteScaffold> {
   String? _activeTitle;
+  late final ScrollController _scrollController;
 
   void _setActive(String? v) => setState(() => _activeTitle = v);
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   void _navigateIfNotCurrent(String route, {Object? arguments}) {
     final current = ModalRoute.of(context)?.settings.name;
@@ -203,7 +217,37 @@ class _SiteScaffoldState extends State<SiteScaffold> {
               activeTitle: _activeTitle,
             )
           : null,
-      body: widget.body,
+      body: ScrollConfiguration(
+        behavior: const _SiteScrollBehavior(),
+        child: PrimaryScrollController(
+          controller: _scrollController,
+          child: Scrollbar(
+            controller: _scrollController,
+            thumbVisibility: true,
+            trackVisibility: true,
+            interactive: true,
+            radius: const Radius.circular(6),
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: const ClampingScrollPhysics(),
+              child: widget.body,
+            ),
+          ),
+        ),
+      ),
     );
   }
+}
+
+// Ensure smooth drag scrolling across devices at the site level
+class _SiteScrollBehavior extends MaterialScrollBehavior {
+  const _SiteScrollBehavior();
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.invertedStylus,
+      };
 }
