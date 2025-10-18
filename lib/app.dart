@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 import 'theme/app_theme.dart';
 import 'pages/home_page.dart';
 import 'pages/industries_pages.dart';
+import 'sections/industries/retail_landing.dart';
+import 'sections/industries/education_landing.dart';
+import 'sections/industries/services_landing.dart';
+import 'sections/industries/printing_packaging_landing.dart';
+import 'sections/industries/cosmetics_landing.dart';
+import 'sections/industries/startup_landing.dart';
 import 'pages/pricing_page.dart';
 import 'pages/portfolio_page.dart';
 import 'pages/resources_page.dart';
@@ -24,6 +30,8 @@ import 'pages/automation_page.dart';
 import 'pages/training_page.dart';
 import 'pages/growth_page.dart';
 import 'pages/services_page.dart';
+import 'sections/layout/site_scaffold.dart';
+import 'pages/business_setup_page.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -54,13 +62,93 @@ class MyApp extends StatelessWidget {
       home: _HomeWithGuard(child: const HomePage()),
       routes: {
   '/home': (_) => const HomePage(),
+        '/services/business-setup': (_) => const BusinessSetupPage(),
         '/industries': (_) => const IndustriesPage(),
-        '/industries/retail': (_) => const IndustriesRetailPage(),
-  '/industries/education': (_) => const IndustriesEducationPage(),
-  '/industries/cosmetics': (_) => const IndustriesCosmeticsPage(),
-  '/industries/printing': (_) => const IndustriesPrintingPage(),
-  '/industries/services': (_) => const IndustriesServicesPage(),
-  '/industries/startup': (_) => const IndustriesStartupPage(),
+        // Industry subpages use section landing widgets directly
+        '/industries/retail': (_) => const SiteScaffold(
+              backgroundColor: Colors.transparent,
+              body: RetailPlaybookLanding(),
+            ),
+        '/industries/education': (_) => SiteScaffold(
+              backgroundColor: Colors.transparent,
+              body: ListView(padding: const EdgeInsets.all(16), children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: EducationPlaybookLanding(
+                      data: sampleEducationContent(
+                        onPrimary: () {},
+                        onSecondary: () {},
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+        '/industries/services': (_) => SiteScaffold(
+              backgroundColor: Colors.transparent,
+              body: ListView(padding: const EdgeInsets.all(16), children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: ServicesPlaybookLanding(
+                      data: sampleServicesContent(
+                        onPrimary: () {},
+                        onSecondary: () {},
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+        '/industries/printing': (_) => SiteScaffold(
+              backgroundColor: Colors.transparent,
+              body: ListView(padding: const EdgeInsets.all(16), children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: PrintingPlaybookLanding(
+                      data: samplePrintingContent(
+                        onPrimary: () {},
+                        onSecondary: () {},
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+        '/industries/cosmetics': (_) => SiteScaffold(
+              backgroundColor: Colors.transparent,
+              body: ListView(padding: const EdgeInsets.all(16), children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: CosmeticsPlaybookLanding(
+                      data: sampleCosmeticsContent(
+                        onPrimary: () {},
+                        onSecondary: () {},
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+        '/industries/startup': (_) => SiteScaffold(
+              backgroundColor: const Color(0xFFF7F7F7),
+              body: ListView(padding: const EdgeInsets.all(16), children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: StartupPlaybookLanding(
+                      data: sampleStartupContent(
+                        onPrimary: () {},
+                        onSecondary: () {},
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
   '/pricing': (_) => const PricingPage(),
   '/portfolio': (_) => const PortfolioPage(),
   '/resources': (_) => const ResourcesPage(),

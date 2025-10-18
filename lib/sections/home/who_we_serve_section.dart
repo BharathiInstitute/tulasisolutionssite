@@ -199,68 +199,101 @@ class _IndustryCardState extends State<_IndustryCard> {
   Widget build(BuildContext context) {
     const gold = Color(0xFFD4AF37);
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: AnimatedScale(
         scale: _hover ? 1.03 : 1.0,
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          decoration: BoxDecoration(
-            color: Colors.white,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              final route = _routeForLabel(widget.data.label);
+              Navigator.of(context).pushNamed(route);
+            },
+            onHover: (h) => setState(() => _hover = h),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _hover ? gold : gold.withValues(alpha: 0.18), width: 1.4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: _hover ? 0.08 : 0.05),
-                blurRadius: _hover ? 16 : 10,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [gold.withValues(alpha: 0.25), Colors.transparent],
-                    radius: 0.8,
+            splashColor: gold.withValues(alpha: 0.12),
+            hoverColor: gold.withValues(alpha: 0.06),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _hover ? gold : gold.withValues(alpha: 0.18), width: 1.4),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: _hover ? 0.08 : 0.05),
+                    blurRadius: _hover ? 16 : 10,
+                    offset: const Offset(0, 6),
                   ),
-                ),
-                child: Icon(
-                  widget.data.icon,
-                  size: 28,
-                  color: gold,
-                  shadows: _hover
-                      ? [
-                          Shadow(color: gold.withValues(alpha: 0.5), blurRadius: 14),
-                          Shadow(color: gold.withValues(alpha: 0.2), blurRadius: 8),
-                        ]
-                      : const [],
-                ),
+                ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                widget.data.label,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.openSans(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: gold,
-                ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [gold.withValues(alpha: 0.25), Colors.transparent],
+                        radius: 0.8,
+                      ),
+                    ),
+                    child: Icon(
+                      widget.data.icon,
+                      size: 28,
+                      color: gold,
+                      shadows: _hover
+                          ? [
+                              Shadow(color: gold.withValues(alpha: 0.5), blurRadius: 14),
+                              Shadow(color: gold.withValues(alpha: 0.2), blurRadius: 8),
+                            ]
+                          : const [],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.data.label,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.openSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: gold,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
+  }
+}
+
+String _routeForLabel(String label) {
+  switch (label.toLowerCase()) {
+    case 'retail':
+      return '/industries/retail';
+    case 'education':
+      return '/industries/education';
+    case 'cosmetics':
+      return '/industries/cosmetics';
+    case 'printing':
+      return '/industries/printing';
+    case 'services':
+      return '/industries/services';
+    case 'startups':
+      return '/industries/startup';
+    default:
+      return '/industries';
   }
 }
 

@@ -5,9 +5,11 @@ import '../header/header_bar.dart';
 import '../header/mobile_drawer.dart';
 
 class SiteScaffold extends StatefulWidget {
-  const SiteScaffold({super.key, required this.body, this.backgroundColor});
+  const SiteScaffold({super.key, required this.body, this.backgroundColor, this.scrollable = true});
   final Widget body;
   final Color? backgroundColor;
+  // When false, do not wrap body in SingleChildScrollView/Scrollbar.
+  final bool scrollable;
 
   @override
   State<SiteScaffold> createState() => _SiteScaffoldState();
@@ -60,17 +62,17 @@ class _SiteScaffoldState extends State<SiteScaffold> {
     } else if (id == 'Industries') {
       _navigateIfNotCurrent('/industries');
     } else if (id == 'Retail') {
-      _navigateIfNotCurrent('/industries', arguments: 'retail');
+      _navigateIfNotCurrent('/industries/retail');
     } else if (id == 'Education') {
-      _navigateIfNotCurrent('/industries', arguments: 'education');
+      _navigateIfNotCurrent('/industries/education');
     } else if (id == 'Cosmetics') {
-      _navigateIfNotCurrent('/industries', arguments: 'cosmetics');
+      _navigateIfNotCurrent('/industries/cosmetics');
     } else if (id == 'Printing & Packaging') {
-      _navigateIfNotCurrent('/industries', arguments: 'printing');
+      _navigateIfNotCurrent('/industries/printing');
     } else if (id == 'Services (Industry)') {
-      _navigateIfNotCurrent('/industries', arguments: 'services');
+      _navigateIfNotCurrent('/industries/services');
     } else if (id == 'Startup') {
-      _navigateIfNotCurrent('/industries', arguments: 'startup');
+      _navigateIfNotCurrent('/industries/startup');
     } else if (id == 'Pricing' || id == 'View Pricing') {
       _navigateIfNotCurrent('/pricing');
     } else if (id == 'Portfolio' || id == 'View Portfolio') {
@@ -106,8 +108,21 @@ class _SiteScaffoldState extends State<SiteScaffold> {
     } else if (id == 'Phone') {
       _navigateIfNotCurrent('/contact', arguments: 'phone');
     } else if (id == 'Business Setup') {
-      // Route to Home for now
-      _navigateIfNotCurrent('/home');
+      _navigateIfNotCurrent('/services/business-setup');
+    } else if (id == 'Business Category / Track') {
+      _navigateIfNotCurrent('/services/business-setup', arguments: 'category');
+    } else if (id == 'Business Manager / In-Charge') {
+      _navigateIfNotCurrent('/services/business-setup', arguments: 'manager');
+    } else if (id == 'Business Pitch / USP') {
+      _navigateIfNotCurrent('/services/business-setup', arguments: 'pitch');
+    } else if (id == 'Business Onboarding') {
+      _navigateIfNotCurrent('/services/business-setup', arguments: 'onboarding');
+    } else if (id == 'Business Analysis') {
+      _navigateIfNotCurrent('/services/business-setup', arguments: 'analysis');
+    } else if (id == 'Pain Points Identification') {
+      _navigateIfNotCurrent('/services/business-setup', arguments: 'pain');
+    } else if (id == 'Goal Setting') {
+      _navigateIfNotCurrent('/services/business-setup', arguments: 'goal');
     } else if (id == 'Branding') {
       _navigateIfNotCurrent('/services/branding');
     } else if (id == 'Logo Design') {
@@ -217,24 +232,26 @@ class _SiteScaffoldState extends State<SiteScaffold> {
               activeTitle: _activeTitle,
             )
           : null,
-      body: ScrollConfiguration(
-        behavior: const _SiteScrollBehavior(),
-        child: PrimaryScrollController(
-          controller: _scrollController,
-          child: Scrollbar(
-            controller: _scrollController,
-            thumbVisibility: true,
-            trackVisibility: true,
-            interactive: true,
-            radius: const Radius.circular(6),
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              physics: const ClampingScrollPhysics(),
-              child: widget.body,
-            ),
-          ),
-        ),
-      ),
+      body: widget.scrollable
+          ? ScrollConfiguration(
+              behavior: const _SiteScrollBehavior(),
+              child: PrimaryScrollController(
+                controller: _scrollController,
+                child: Scrollbar(
+                  controller: _scrollController,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  interactive: true,
+                  radius: const Radius.circular(6),
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    physics: const ClampingScrollPhysics(),
+                    child: widget.body,
+                  ),
+                ),
+              ),
+            )
+          : widget.body,
     );
   }
 }

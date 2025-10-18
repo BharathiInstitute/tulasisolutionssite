@@ -1,18 +1,12 @@
 import 'package:flutter/material.dart';
+import '../sections/layout/site_scaffold.dart';
 import '../sections/services/page_background.dart';
-import '../sections/services/responsive_nav_bar.dart';
 // Updated to new consolidated services path (migrated from sections/automation/*)
 import '../sections/services/automation/whatsapp_automation_hero_section.dart';
 import '../sections/services/automation/email_automation_hero_section.dart';
 import '../sections/services/automation/sms_automation_hero_section.dart';
 import '../sections/services/automation/customer_journey_hero_section.dart';
-import 'branding_page.dart';
-import 'marketing_page.dart';
-import 'websites_page.dart';
-import 'training_page.dart';
-import 'growth_page.dart';
-import 'software_page.dart';
-import 'home_page.dart';
+// Navigation across services now handled by global header
 
 class AutomationPage extends StatefulWidget {
   const AutomationPage({super.key});
@@ -22,7 +16,6 @@ class AutomationPage extends StatefulWidget {
 }
 
 class _AutomationPageState extends State<AutomationPage> {
-  final _scrollController = ScrollController();
   final _whatsappKey = GlobalKey();
   final _emailKey = GlobalKey();
   final _smsKey = GlobalKey();
@@ -95,92 +88,32 @@ class _AutomationPageState extends State<AutomationPage> {
       );
     }
   }
-  void _onNavSelect(int index, String label) {
-    if (label == 'Business Setup' || index == 0) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const HomePage()),
-      );
-      return;
-    }
-    if (label == 'Branding' || index == 1) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const BrandingPage()),
-      );
-      return;
-    }
-    if (label == 'Marketing' || index == 2) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const MarketingPage()),
-      );
-      return;
-    }
-    if (label == 'Websites' || index == 3) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const WebsitesPage()),
-      );
-      return;
-    }
-    if (label == 'Software' || index == 4) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const SoftwarePage()),
-      );
-      return;
-    }
-  if (label == 'Automation' || index == 5) {
-      // already here
-      return;
-    }
-    if (label == 'Training' || index == 6) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const TrainingPage()),
-      );
-      return;
-    }
-    if (label == 'Growth' || index == 7) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const GrowthPage()),
-      );
-      return;
-    }
-  }
+  // Removed per-page services nav; use global header only
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: PageBackground(
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ResponsiveNavBar(title: 'Tulasi Site Services', activeLabel: 'Automation', onItemSelected: _onNavSelect),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: _scrollController,
-                child: DefaultTextStyle.merge(
-                  style: const TextStyle(color: Colors.white),
-                  child: IconTheme(
-                    data: const IconThemeData(color: Colors.white70),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Container(key: _whatsappKey, child: const WhatsAppAutomationHeroSection()),
-                          SizedBox(height: 24),
-                          Container(key: _emailKey, child: const EmailAutomationHeroSection()),
-                          SizedBox(height: 24),
-                          Container(key: _smsKey, child: const SmsAutomationHeroSection()),
-                          SizedBox(height: 24),
-                          Container(key: _journeyKey, child: const CustomerJourneyHeroSection()),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+    return SiteScaffold(
+      body: PageBackground(
+        child: DefaultTextStyle.merge(
+          style: const TextStyle(color: Colors.white),
+          child: IconTheme(
+            data: const IconThemeData(color: Colors.white70),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(key: _whatsappKey, child: const WhatsAppAutomationHeroSection()),
+                  const SizedBox(height: 24),
+                  Container(key: _emailKey, child: const EmailAutomationHeroSection()),
+                  const SizedBox(height: 24),
+                  Container(key: _smsKey, child: const SmsAutomationHeroSection()),
+                  const SizedBox(height: 24),
+                  Container(key: _journeyKey, child: const CustomerJourneyHeroSection()),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
         ),
       ),
     );

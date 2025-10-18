@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../sections/layout/site_scaffold.dart';
 import '../sections/services/page_background.dart';
-import '../sections/services/responsive_nav_bar.dart';
 import '../sections/services/marketing/pamphlet_hero_section.dart';
 import '../sections/services/marketing/hoardings_hero_section.dart';
 import '../sections/services/marketing/reels_hero_section.dart';
@@ -9,13 +9,7 @@ import '../sections/services/marketing/gmb_hero_section.dart';
 import '../sections/services/marketing/channel_growth_hero_section.dart';
 import '../sections/services/marketing/whatsapp_marketing_hero_section.dart';
 import '../sections/services/marketing/google_ads_hero_section.dart';
-import 'branding_page.dart';
-import 'websites_page.dart';
-import 'automation_page.dart';
-import 'software_page.dart';
-import 'training_page.dart';
-import 'growth_page.dart';
-import 'home_page.dart';
+// Navigation between services now handled by global header; no per-page imports needed
 
 class MarketingPage extends StatefulWidget {
   const MarketingPage({super.key});
@@ -25,7 +19,6 @@ class MarketingPage extends StatefulWidget {
 }
 
 class _MarketingPageState extends State<MarketingPage> {
-  final _scrollController = ScrollController();
   final _pamphletKey = GlobalKey();
   final _hoardingsKey = GlobalKey();
   final _reelsKey = GlobalKey();
@@ -69,100 +62,34 @@ class _MarketingPageState extends State<MarketingPage> {
       Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400), curve: Curves.easeInOutCubic, alignment: 0.05);
     }
   }
-  void _onNavSelect(int index, String label) {
-    if (label == 'Business Setup' || index == 0) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const HomePage()),
-      );
-      return;
-    }
-    if (label == 'Branding' || index == 1) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const BrandingPage()),
-      );
-      return;
-    }
-    if (label == 'Marketing' || index == 2) {
-      // already here; do nothing
-      return;
-    }
-    if (label == 'Websites' || index == 3) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const WebsitesPage()),
-      );
-      return;
-    }
-    if (label == 'Software' || index == 4) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const SoftwarePage()),
-      );
-      return;
-    }
-    if (label == 'Automation' || index == 5) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const AutomationPage()),
-      );
-      return;
-    }
-    if (label == 'Training' || index == 6) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const TrainingPage()),
-      );
-      return;
-    }
-    if (label == 'Growth' || index == 7) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const GrowthPage()),
-      );
-      return;
-    }
-  }
+  // Removed per-page services nav; site-wide header handles navigation
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: PageBackground(
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ResponsiveNavBar(title: 'Tulasi Site Services', activeLabel: 'Marketing', onItemSelected: _onNavSelect),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: _scrollController,
-                child: DefaultTextStyle.merge(
-                  style: const TextStyle(color: Colors.white),
-                  child: IconTheme(
-                    data: const IconThemeData(color: Colors.white70),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Container(key: _pamphletKey, child: const PamphletHeroSection()),
-                          const SizedBox(height: 24),
-                          Container(key: _hoardingsKey, child: const HoardingsHeroSection()),
-                          const SizedBox(height: 24),
-                          Container(key: _reelsKey, child: const ReelsHeroSection()),
-                          const SizedBox(height: 24),
-                          Container(key: _videosKey, child: const PromotionalVideosHeroSection()),
-                          const SizedBox(height: 24),
-                          Container(key: _gmbKey, child: const GmbHeroSection()),
-                          const SizedBox(height: 24),
-                          Container(key: _channelsKey, child: const ChannelGrowthHeroSection()),
-                          const SizedBox(height: 24),
-                          Container(key: _whatsappKey, child: const WhatsAppMarketingHeroSection()),
-                          const SizedBox(height: 32),
-                          Container(key: _adsKey, child: const GoogleAdsHeroSection()),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+    return SiteScaffold(
+      body: PageBackground(
+        child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(key: _pamphletKey, child: const PamphletHeroSection()),
+                  const SizedBox(height: 24),
+                  Container(key: _hoardingsKey, child: const HoardingsHeroSection()),
+                  const SizedBox(height: 24),
+                  Container(key: _reelsKey, child: const ReelsHeroSection()),
+                  const SizedBox(height: 24),
+                  Container(key: _videosKey, child: const PromotionalVideosHeroSection()),
+                  const SizedBox(height: 24),
+                  Container(key: _gmbKey, child: const GmbHeroSection()),
+                  const SizedBox(height: 24),
+                  Container(key: _channelsKey, child: const ChannelGrowthHeroSection()),
+                  const SizedBox(height: 24),
+                  Container(key: _whatsappKey, child: const WhatsAppMarketingHeroSection()),
+                  const SizedBox(height: 32),
+                  Container(key: _adsKey, child: const GoogleAdsHeroSection()),
+                ],
               ),
-            ),
-          ],
-        ),
         ),
       ),
     );

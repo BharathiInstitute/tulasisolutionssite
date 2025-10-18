@@ -1,14 +1,7 @@
 import 'package:flutter/material.dart';
-import 'branding_page.dart';
-import 'marketing_page.dart';
-import 'websites_page.dart';
-import 'software_page.dart';
-import 'automation_page.dart';
-import 'growth_page.dart';
-import 'home_page.dart';
+import '../sections/layout/site_scaffold.dart';
 // Updated imports to point directly to implementation files in training/ subfolder.
 import '../sections/services/page_background.dart';
-import '../sections/services/responsive_nav_bar.dart';
 // Import canonical training section implementations from services directory.
 import 'package:tulasisolutionssite/sections/services/training/crm_training_section_impl.dart';
 import 'package:tulasisolutionssite/sections/services/training/lead_management_section_impl.dart';
@@ -40,40 +33,7 @@ class _TrainingPageState extends State<TrainingPage> {
     super.dispose();
   }
 
-  void _onNavSelect(int index, String label) {
-    if (label == 'Business Setup' || index == 0) {
-  Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
-      return;
-    }
-    if (label == 'Branding' || index == 1) {
-  Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const BrandingPage()));
-      return;
-    }
-    if (label == 'Marketing' || index == 2) {
-  Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const MarketingPage()));
-      return;
-    }
-    if (label == 'Websites' || index == 3) {
-  Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const WebsitesPage()));
-      return;
-    }
-    if (label == 'Software' || index == 4) {
-  Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const SoftwarePage()));
-      return;
-    }
-    if (label == 'Automation' || index == 5) {
-  Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const AutomationPage()));
-      return;
-    }
-    if (label == 'Training' || index == 6) {
-      // already here
-      return;
-    }
-    if (label == 'Growth' || index == 7) {
-  Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const GrowthPage()));
-      return;
-    }
-  }
+  // Removed per-page services nav; site header handles navigation
 
   void _scrollTo(TrainingSection section) {
     final key = switch (section) {
@@ -112,13 +72,12 @@ class _TrainingPageState extends State<TrainingPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: PageBackground(
+    return SiteScaffold(
+      scrollable: false,
+      body: PageBackground(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ResponsiveNavBar(title: 'Tulasi Site Services', activeLabel: 'Training', onItemSelected: _onNavSelect),
               // Quick in-page links
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -224,7 +183,6 @@ class _TrainingPageState extends State<TrainingPage> {
               ),
             ],
           ),
-        ),
       ),
     );
   }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../sections/layout/site_scaffold.dart';
 import '../sections/services/page_background.dart';
-import '../sections/services/responsive_nav_bar.dart';
 import 'branding_page.dart';
 import 'marketing_page.dart';
 import 'websites_page.dart';
@@ -8,7 +8,6 @@ import 'software_page.dart';
 import 'automation_page.dart';
 import 'training_page.dart';
 import 'growth_page.dart';
-import 'home_page.dart';
 
 
 /// Optimised Services hub using a single CustomScrollView (slivers) to reduce
@@ -27,39 +26,6 @@ class _ServicesPageState extends State<ServicesPage> with TickerProviderStateMix
 	void dispose() {
 		_scrollController.dispose();
 		super.dispose();
-	}
-
-	void _onNav(int index, String label) {
-		Widget? page;
-		switch (label) {
-			case 'Business Setup':
-				page = const HomePage();
-				break;
-			case 'Branding':
-				page = const BrandingPage();
-				break;
-			case 'Marketing':
-				page = const MarketingPage();
-				break;
-			case 'Websites':
-				page = const WebsitesPage();
-				break;
-			case 'Software':
-				page = const SoftwarePage();
-				break;
-			case 'Automation':
-				page = const AutomationPage();
-				break;
-			case 'Training':
-				page = const TrainingPage();
-				break;
-			case 'Growth':
-				page = const GrowthPage();
-				break;
-		}
-		if (page != null) {
-			Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => page!));
-		}
 	}
 
 	List<_ServiceMeta> get _services => const [
@@ -109,24 +75,21 @@ class _ServicesPageState extends State<ServicesPage> with TickerProviderStateMix
 
 	@override
 	Widget build(BuildContext context) {
-		return Scaffold(
-			body: ScrollConfiguration(
-				behavior: const _ServicesScrollBehavior(),
-				child: Stack(
-					children: [
-						const PageBackground(child: SizedBox.expand()),
-						Column(
-							children: [
-								ResponsiveNavBar(title: 'Tulasi Site Services', onItemSelected: _onNav),
-								Expanded(
-									child: Scrollbar(
-										controller: _scrollController,
-										thumbVisibility: true,
-										interactive: true,
-										radius: const Radius.circular(6),
-										child: CustomScrollView(
-											controller: _scrollController,
-											slivers: [
+			return SiteScaffold(
+				scrollable: false,
+				body: ScrollConfiguration(
+					behavior: const _ServicesScrollBehavior(),
+					child: Stack(
+						children: [
+							const PageBackground(child: SizedBox.expand()),
+							Scrollbar(
+								controller: _scrollController,
+								thumbVisibility: true,
+								interactive: true,
+								radius: const Radius.circular(6),
+								child: CustomScrollView(
+									controller: _scrollController,
+									slivers: [
 												SliverToBoxAdapter(child: _Hero(onExplore: () => _scrollToGrid())),
 												SliverPadding(
 													padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
@@ -166,16 +129,13 @@ class _ServicesPageState extends State<ServicesPage> with TickerProviderStateMix
 													child: _FooterHelp(scrollController: _scrollController),
 												),
 												const SliverToBoxAdapter(child: SizedBox(height: 60)),
+														],
+													),
+												),
 											],
 										),
 									),
-								),
-							],
-						),
-					],
-				),
-			),
-		);
+								);
 	}
 
 	final GlobalKey _gridKey = GlobalKey();

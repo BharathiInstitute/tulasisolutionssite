@@ -2,7 +2,13 @@
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'models/bullet_item.dart';
+// Local bullet model for retail playbook
+class BulletItem {
+  final String text;
+  /// Can be an IconData, an emoji String, or null (treated as a generic dot)
+  final Object? icon;
+  const BulletItem({required this.text, required this.icon});
+}
 
 class RetailPlaybookCard extends StatefulWidget {
   const RetailPlaybookCard({
@@ -216,27 +222,31 @@ class _LeftContent extends StatelessWidget {
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: gold.withValues(alpha: .12),
-                      borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => Navigator.of(context).pushNamed('/industries'),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: gold.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: _iconFor(b.icon, color: gold, size: 16),
                     ),
-                    alignment: Alignment.center,
-                    child: _iconFor(b.icon, color: gold, size: 16),
-                  ),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text(
-                      b.text,
-                      style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        b.text,
+                        style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
@@ -262,6 +272,7 @@ class _LeftContent extends StatelessWidget {
             ),
           ],
         ),
+        const SizedBox(height: 16),
       ],
     );
   }

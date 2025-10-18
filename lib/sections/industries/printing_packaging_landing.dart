@@ -123,7 +123,12 @@ class _PrintingPlaybookLandingState extends State<PrintingPlaybookLanding>
 						padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
 						child: ConstrainedBox(
 							constraints: const BoxConstraints(maxWidth: 1200),
-							child: _FeaturesGrid(items: widget.data.features),
+							child: Column(
+								mainAxisSize: MainAxisSize.min,
+								children: [
+									_FeaturesGrid(items: widget.data.features),
+								],
+							),
 						),
 					),
 				],
@@ -488,7 +493,7 @@ class _FeaturesGrid extends StatelessWidget {
 				itemCount: items.length,
 				gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
 					crossAxisCount: cols,
-					mainAxisExtent: 150,
+					mainAxisExtent: 220,
 					crossAxisSpacing: 16,
 					mainAxisSpacing: 16,
 				),

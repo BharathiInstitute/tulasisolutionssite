@@ -1,12 +1,5 @@
 import 'package:flutter/material.dart';
-import 'home_page.dart';
-import 'branding_page.dart';
-import 'marketing_page.dart';
-import 'websites_page.dart';
-import 'software_page.dart';
-import 'automation_page.dart';
-import 'training_page.dart';
-import '../sections/services/responsive_nav_bar.dart';
+import '../sections/layout/site_scaffold.dart';
 import '../sections/services/page_background.dart';
 import '../sections/services/growth/sales_target_setting_section.dart';
 import '../sections/services/growth/strategy_planning_section.dart';
@@ -38,36 +31,7 @@ class _GrowthPageState extends State<GrowthPage> {
     }
   }
 
-  void _onNavSelect(BuildContext context, int index, String label) {
-    Widget? page;
-    switch (label) {
-      case 'Business Setup':
-        page = const HomePage();
-        break;
-      case 'Branding':
-        page = const BrandingPage();
-        break;
-      case 'Marketing':
-        page = const MarketingPage();
-        break;
-      case 'Websites':
-        page = const WebsitesPage();
-        break;
-      case 'Software':
-        page = const SoftwarePage();
-        break;
-      case 'Automation':
-        page = const AutomationPage();
-        break;
-      case 'Training':
-        page = const TrainingPage();
-        break;
-      case 'Growth':
-      default:
-        return; // already here
-    }
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => page!));
-  }
+  // Removed per-page services nav; rely on global header
 
   void _scrollTo(GrowthSection section) {
     final key = switch (section) {
@@ -88,11 +52,10 @@ class _GrowthPageState extends State<GrowthPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
+    return SiteScaffold(
+      scrollable: false,
+      body: Column(
           children: [
-            ResponsiveNavBar(title: 'Tulasi Site Services', activeLabel: 'Growth', onItemSelected: (i, l) => _onNavSelect(context, i, l)),
             // In-page quick links
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -136,7 +99,6 @@ class _GrowthPageState extends State<GrowthPage> {
             ),
           ],
         ),
-      ),
     );
   }
 }

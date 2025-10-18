@@ -112,7 +112,12 @@ class _EducationPlaybookLandingState extends State<EducationPlaybookLanding>
 						padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
 						child: ConstrainedBox(
 							constraints: const BoxConstraints(maxWidth: 1200),
-							child: _IncludedFeaturesGrid(items: widget.data.features),
+							child: Column(
+								mainAxisSize: MainAxisSize.min,
+								children: [
+									_IncludedFeaturesGrid(items: widget.data.features),
+								],
+							),
 						),
 					),
 				],

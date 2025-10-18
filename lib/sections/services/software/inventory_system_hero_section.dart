@@ -6,14 +6,13 @@ class InventorySystemHeroSection extends StatelessWidget {
 	@override
 	Widget build(BuildContext context) {
 		return Container(
-			decoration: const BoxDecoration(
-				gradient: LinearGradient(
-					colors: [Color(0xFF0B6B53), Color(0xFF065F46)],
-					begin: Alignment.topLeft,
-					end: Alignment.bottomRight,
-				),
+			margin: const EdgeInsets.symmetric(vertical: 8),
+			padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+			decoration: BoxDecoration(
+				color: Colors.black.withValues(alpha: 0.03),
+				borderRadius: BorderRadius.circular(18),
+				border: Border.all(color: Colors.black12),
 			),
-			padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
 			child: Center(
 				child: ConstrainedBox(
 					constraints: const BoxConstraints(maxWidth: 1000),
@@ -48,10 +47,10 @@ class _InventoryIntro extends StatelessWidget {
 		return Column(
 			crossAxisAlignment: CrossAxisAlignment.start,
 			children: [
-				Text('Inventory Intelligence', style: theme.headlineSmall?.copyWith(color: Colors.white, fontWeight: FontWeight.w800, height: 1.1)),
+				Text('Inventory Intelligence', style: theme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, height: 1.1)),
 				const SizedBox(height: 12),
 				Text('Unified stock tracking, reorder automation, and multi-location visibility – so you never miss a sale or overstock again.',
-						style: theme.bodyLarge?.copyWith(color: Colors.white70, height: 1.5)),
+						style: theme.bodyLarge?.copyWith(height: 1.5)),
 				const SizedBox(height: 20),
 				Wrap(
 					spacing: 10,
@@ -92,11 +91,11 @@ class _Chip extends StatelessWidget {
 		return Container(
 			padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
 			decoration: BoxDecoration(
-				color: Colors.white.withValues(alpha: 0.12),
+				color: Colors.black.withValues(alpha: 0.06),
 				borderRadius: BorderRadius.circular(999),
-				border: Border.all(color: Colors.white24),
+				border: Border.all(color: Colors.black12),
 			),
-			child: Text(text, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+			child: Text(text, style: const TextStyle(color: Colors.black87, fontSize: 12, fontWeight: FontWeight.w600)),
 		);
 	}
 }
@@ -113,23 +112,42 @@ class _InventoryPanels extends StatelessWidget {
 				_MetricCard(icon: Icons.shopping_cart_checkout, label: 'Pending Orders', value: '54'),
 				_MetricCard(icon: Icons.warning_amber_rounded, label: 'Low Stock', value: '17'),
 			];
-			return Wrap(
-				spacing: 16,
-				runSpacing: 16,
+
+			if (isNarrow) {
+				return Wrap(
+					spacing: 16,
+					runSpacing: 16,
+					children: [
+						SizedBox(width: c.maxWidth, child: const _StockTimeline()),
+						SizedBox(width: c.maxWidth, child: const _ReorderList()),
+						for (final p in panels)
+							SizedBox(width: (c.maxWidth - 16) / 2, child: p),
+					],
+				);
+			}
+
+			// Wide layout: make the first two cards equal height
+			return Column(
 				children: [
-					SizedBox(
-						width: isNarrow ? c.maxWidth : (c.maxWidth - 16) / 2,
-						child: const _StockTimeline(),
-					),
-					SizedBox(
-						width: isNarrow ? c.maxWidth : (c.maxWidth - 16) / 2,
-						child: const _ReorderList(),
-					),
-					for (final p in panels)
-						SizedBox(
-							width: isNarrow ? (c.maxWidth - 16) / 2 : (c.maxWidth - 48) / 4,
-							child: p,
+					IntrinsicHeight(
+						child: Row(
+							crossAxisAlignment: CrossAxisAlignment.stretch,
+							children: const [
+								Expanded(child: _StockTimeline()),
+								SizedBox(width: 16),
+								Expanded(child: _ReorderList()),
+							],
 						),
+					),
+					const SizedBox(height: 16),
+					Wrap(
+						spacing: 16,
+						runSpacing: 16,
+						children: [
+							for (final p in panels)
+								SizedBox(width: (c.maxWidth - 48) / 4, child: p),
+						],
+					),
 				],
 			);
 		});

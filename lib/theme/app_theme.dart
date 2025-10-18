@@ -7,7 +7,7 @@ class AppTheme {
   static ThemeData lightTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
-    scaffoldBackgroundColor: AppColors.background,
+  scaffoldBackgroundColor: AppColors.background,
     primaryColor: AppColors.primary,
     fontFamily: AppTextStyles.fontFamily,
   textTheme: GoogleFonts.openSansTextTheme(const TextTheme(
@@ -20,14 +20,14 @@ class AppTheme {
       primary: AppColors.primary,
       secondary: AppColors.secondary,
       error: AppColors.error,
-      background: AppColors.background,
+      surface: AppColors.background,
     ),
   );
 
   static ThemeData darkTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
-    scaffoldBackgroundColor: AppColors.darkBackground,
+  scaffoldBackgroundColor: AppColors.darkBackground,
     primaryColor: AppColors.primary,
     fontFamily: AppTextStyles.fontFamily,
   textTheme: GoogleFonts.openSansTextTheme(const TextTheme(
@@ -40,7 +40,7 @@ class AppTheme {
       primary: AppColors.primary,
       secondary: AppColors.secondary,
       error: AppColors.error,
-      background: AppColors.darkBackground,
+      surface: AppColors.darkBackground,
     ),
   );
 }

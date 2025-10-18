@@ -242,6 +242,8 @@ class _Grid extends StatelessWidget {
 	Widget build(BuildContext context) {
 		final isWide = MediaQuery.sizeOf(context).width >= 1000;
 		final crossAxisCount = isWide ? 3 : 1;
+		// Use a slightly larger fixed tile height to avoid any residual overflow
+		final double tileHeight = isWide ? 250 : 220;
 		return GridView.builder(
 			physics: const NeverScrollableScrollPhysics(),
 			shrinkWrap: true,
@@ -250,7 +252,7 @@ class _Grid extends StatelessWidget {
 				crossAxisCount: crossAxisCount,
 				mainAxisSpacing: 26,
 				crossAxisSpacing: 26,
-				childAspectRatio: isWide ? 1.1 : 3.2,
+				mainAxisExtent: tileHeight,
 			),
 			itemBuilder: (c, i) => _FeatureCard(item: features[i], rose: rose, dark: dark),
 		);
@@ -282,6 +284,7 @@ class _FeatureCardState extends State<_FeatureCard> with SingleTickerProviderSta
 	@override
 	Widget build(BuildContext context) {
 		final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+		final isWide = MediaQuery.sizeOf(context).width >= 1000;
 		return MouseRegion(
 			onEnter: (_) => setState(() => _hover = true),
 			onExit: (_) => setState(() => _hover = false),
@@ -317,6 +320,8 @@ class _FeatureCardState extends State<_FeatureCard> with SingleTickerProviderSta
 											fontSize: 18,
 											color: widget.dark,
 										),
+										maxLines: 2,
+										overflow: TextOverflow.ellipsis,
 									),
 									const SizedBox(height: 10),
 									Text(
@@ -325,6 +330,8 @@ class _FeatureCardState extends State<_FeatureCard> with SingleTickerProviderSta
 											color: widget.dark.withValues(alpha: .70),
 											height: 1.4,
 										),
+										maxLines: isWide ? 3 : 4,
+										overflow: TextOverflow.ellipsis,
 									),
 								],
 							),

@@ -5,14 +5,13 @@ class CustomerServiceToolsHeroSection extends StatelessWidget {
 	@override
 	Widget build(BuildContext context) {
 		return Container(
-			decoration: const BoxDecoration(
-				gradient: LinearGradient(
-					colors: [Color(0xFF1E3A8A), Color(0xFF0F1E46)],
-					begin: Alignment.topLeft,
-					end: Alignment.bottomRight,
-				),
+			margin: const EdgeInsets.symmetric(vertical: 8),
+			padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+			decoration: BoxDecoration(
+				color: Colors.black.withValues(alpha: 0.03),
+				borderRadius: BorderRadius.circular(18),
+				border: Border.all(color: Colors.black12),
 			),
-			padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 54),
 			child: Center(
 				child: ConstrainedBox(
 					constraints: const BoxConstraints(maxWidth: 1050),
@@ -44,10 +43,10 @@ class _CsIntro extends StatelessWidget {
 	Widget build(BuildContext context) {
 		final t = Theme.of(context).textTheme;
 		return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-			Text('Delight Every Interaction', style: t.headlineSmall?.copyWith(color: Colors.white, fontWeight: FontWeight.w800, height: 1.05)),
+			Text('Delight Every Interaction', style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w800, height: 1.05)),
 			const SizedBox(height: 14),
 			Text('Unified support inbox, SLA tracking, and proactive customer health signals – all in one workflow surface.',
-					style: t.bodyLarge?.copyWith(color: Colors.white70, height: 1.5)),
+					style: t.bodyLarge?.copyWith(height: 1.5)),
 			const SizedBox(height: 26),
 			Wrap(spacing: 10, runSpacing: 10, children: const [
 				_CsChip('Omni Inbox'),
@@ -82,11 +81,11 @@ class _CsChip extends StatelessWidget {
 		return Container(
 			padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
 			decoration: BoxDecoration(
-				color: Colors.white.withValues(alpha: 0.12),
+				color: Colors.black.withValues(alpha: 0.06),
 				borderRadius: BorderRadius.circular(999),
-				border: Border.all(color: Colors.white24),
+				border: Border.all(color: Colors.black12),
 			),
-			child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+			child: Text(label, style: const TextStyle(color: Colors.black87, fontSize: 12, fontWeight: FontWeight.w600)),
 		);
 	}
 }
@@ -95,16 +94,46 @@ class _CsPanels extends StatelessWidget {
 	const _CsPanels();
 	@override
 	Widget build(BuildContext context) {
-		return Wrap(
-			spacing: 18,
-			runSpacing: 18,
-			children: const [
-				_TicketPanel(),
-				_SlaPanel(),
-				_HealthPanel(),
-				_MacroPanel(),
-			],
-		);
+		return LayoutBuilder(builder: (context, c) {
+			final wide = c.maxWidth >= 520;
+			if (!wide) {
+				return const Wrap(
+					spacing: 18,
+					runSpacing: 18,
+					children: [
+						_TicketPanel(),
+						_SlaPanel(),
+						_HealthPanel(),
+						_MacroPanel(),
+					],
+				);
+			}
+			const double kPanelHeight = 220;
+			return Column(
+				crossAxisAlignment: CrossAxisAlignment.start,
+				children: [
+					// Row 1: Active Tickets + SLA & Satisfaction (equal width)
+					Row(
+						crossAxisAlignment: CrossAxisAlignment.start,
+						children: [
+							Expanded(child: SizedBox(height: kPanelHeight, child: const _TicketPanel())),
+							const SizedBox(width: 18),
+							Expanded(child: SizedBox(height: kPanelHeight, child: const _SlaPanel())),
+						],
+					),
+					const SizedBox(height: 18),
+					// Row 2: Health Signals + Macros (equal width)
+					Row(
+						crossAxisAlignment: CrossAxisAlignment.start,
+						children: [
+							Expanded(child: SizedBox(height: kPanelHeight, child: const _HealthPanel())),
+							const SizedBox(width: 18),
+							Expanded(child: SizedBox(height: kPanelHeight, child: const _MacroPanel())),
+						],
+					),
+				],
+			);
+		});
 	}
 }
 
@@ -247,12 +276,12 @@ class _GlassCard extends StatelessWidget {
 			width: width,
 			padding: const EdgeInsets.all(16),
 			decoration: BoxDecoration(
-				color: const Color(0xFF0F1E46),
+				color: Colors.black.withValues(alpha: 0.04),
 				borderRadius: BorderRadius.circular(18),
-				border: Border.all(color: const Color(0xFF1E3A8A)),
+				border: Border.all(color: Colors.black12),
 			),
 			child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-				Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+				Text(title, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700)),
 				const SizedBox(height: 14),
 				child,
 			]),

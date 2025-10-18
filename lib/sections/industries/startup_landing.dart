@@ -80,13 +80,7 @@ class _StartupPlaybookLandingState extends State<StartupPlaybookLanding>
 		);
 
 		return Container(
-			decoration: const BoxDecoration(
-				gradient: LinearGradient(
-					colors: [Color(0xFFF8F9FB), Color(0xFFF3F0FF)],
-					begin: Alignment.topLeft,
-					end: Alignment.bottomRight,
-				),
-			),
+			color: Theme.of(context).scaffoldBackgroundColor,
 			child: Column(
 				children: [
 					Padding(
@@ -123,7 +117,12 @@ class _StartupPlaybookLandingState extends State<StartupPlaybookLanding>
 						padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
 						child: ConstrainedBox(
 							constraints: const BoxConstraints(maxWidth: 1200),
-							child: _FeaturesGrid(items: widget.data.features),
+							child: Column(
+								mainAxisSize: MainAxisSize.min,
+								children: [
+									_FeaturesGrid(items: widget.data.features),
+								],
+							),
 						),
 					),
 				],
@@ -498,7 +497,7 @@ class _FeaturesGrid extends StatelessWidget {
 				itemCount: items.length,
 				gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
 					crossAxisCount: cols,
-					mainAxisExtent: 150,
+					mainAxisExtent: 220,
 					crossAxisSpacing: 16,
 					mainAxisSpacing: 16,
 				),
