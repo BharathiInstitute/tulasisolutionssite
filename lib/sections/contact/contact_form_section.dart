@@ -77,7 +77,7 @@ class _ContactFormSectionState extends State<ContactFormSection> {
     // Accent color similar to screenshot_17 style
     const accent = Color(0xFF0EA5E9); // cyan-500
 
-    InputDecoration _dec(String label) => InputDecoration(
+    InputDecoration dec(String label) => InputDecoration(
           labelText: label,
           labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accent.withValues(alpha: 0.5), width: 1.2)),
@@ -97,15 +97,15 @@ class _ContactFormSectionState extends State<ContactFormSection> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextFormField(controller: _nameCtrl, decoration: _dec('Name')),
+            TextFormField(controller: _nameCtrl, decoration: dec('Name')),
             const SizedBox(height: 12),
-            TextFormField(controller: _businessCtrl, decoration: _dec('Business')),
+            TextFormField(controller: _businessCtrl, decoration: dec('Business')),
             const SizedBox(height: 12),
-            TextFormField(controller: _emailCtrl, decoration: _dec('Email Address')),
+            TextFormField(controller: _emailCtrl, decoration: dec('Email Address')),
             const SizedBox(height: 12),
-            TextFormField(controller: _phoneCtrl, decoration: _dec('Phone')),
+            TextFormField(controller: _phoneCtrl, decoration: dec('Phone')),
             const SizedBox(height: 12),
-            TextFormField(controller: _messageCtrl, decoration: _dec('Message'), maxLines: 4),
+            TextFormField(controller: _messageCtrl, decoration: dec('Message'), maxLines: 4),
             const SizedBox(height: 14),
             CheckboxListTile(
               value: _agree,
