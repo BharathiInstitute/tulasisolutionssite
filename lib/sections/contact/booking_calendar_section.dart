@@ -8,7 +8,7 @@ class BookingCalendarSection extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF4FF),
+        color: Theme.of(context).scaffoldBackgroundColor,
         border: Border(top: BorderSide(color: Colors.black.withValues(alpha: .06))),
       ),
       child: Center(

@@ -36,22 +36,31 @@ class _ToolingIntegrationsSectionState extends State<ToolingIntegrationsSection>
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.sizeOf(context).width;
-    final isDesktop = w >= 1000;
-    final isTablet = w >= 600 && w < 1000;
+  final isDesktop = w >= 1000;
+  final isTablet = w >= 600 && w < 1000;
 
     // Columns by breakpoint
-    final int cols = isDesktop ? (w >= 1280 ? 4 : 3) : (isTablet ? (w >= 800 ? 3 : 2) : (w >= 380 ? 2 : 1));
+  // Increase columns on wide desktop so all items fit on one row when possible
+  final int cols = isDesktop
+    ? (w >= 1400
+      ? 5
+      : (w >= 1280
+        ? 4
+        : 3))
+    : (isTablet
+      ? (w >= 800 ? 3 : 2)
+      : (w >= 380 ? 2 : 1));
 
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 16, vertical: isDesktop ? 88 : (isTablet ? 72 : 56)),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFFFBFDFF), Color(0xFFF0F6FF)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
+      padding: EdgeInsets.only(
+        left: isDesktop ? 24 : 16,
+        right: isDesktop ? 24 : 16,
+        // Reduce top padding to bring section closer to previous
+        top: isDesktop ? 28 : (isTablet ? 24 : 20),
+        bottom: isDesktop ? 72 : (isTablet ? 60 : 52),
       ),
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1240),
@@ -61,13 +70,13 @@ class _ToolingIntegrationsSectionState extends State<ToolingIntegrationsSection>
               Text(
                 'Tooling & Integrations',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: isDesktop ? 24 : (isTablet ? 22 : 20), fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                style: TextStyle(fontSize: isDesktop ? 30 : (isTablet ? 26 : 22), fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
               ),
               const SizedBox(height: 8),
               Text(
                 'Seamlessly connect your workflows with leading tools like CRM, payments, analytics, and more.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                style: TextStyle(fontSize: isDesktop ? 16 : (isTablet ? 15 : 14), color: Colors.grey[700]),
               ),
               const SizedBox(height: 26),
               GridView.builder(
@@ -90,9 +99,16 @@ class _ToolingIntegrationsSectionState extends State<ToolingIntegrationsSection>
                     opacity: fade,
                     // Removed continuous per-frame floating animation to reduce CPU usage & jank.
                     child: RepaintBoundary(
-                      child: _ToolCard(
-                        item: t,
-                        onTap: () => widget.onTapTool?.call(t.id),
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: FractionallySizedBox(
+                          widthFactor: 0.82,
+                          heightFactor: 0.82,
+                          child: _ToolCard(
+                            item: t,
+                            onTap: () => widget.onTapTool?.call(t.id),
+                          ),
+                        ),
                       ),
                     ),
                   );
@@ -131,10 +147,10 @@ class _ToolCardState extends State<_ToolCard> {
       duration: const Duration(milliseconds: 140),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [shadow],
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       child: Center(
         child: Semantics(
           button: true,
@@ -175,8 +191,8 @@ class _LogoImage extends StatelessWidget {
     final baseColor = Colors.indigo.shade600;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      constraints: const BoxConstraints(minWidth: 80, minHeight: 40),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+      constraints: const BoxConstraints(minWidth: 64, minHeight: 34),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
         gradient: LinearGradient(
@@ -193,7 +209,7 @@ class _LogoImage extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.extension, color: baseColor.withValues(alpha: .9), size: 22),
+          Icon(Icons.extension, color: baseColor.withValues(alpha: .9), size: 20),
           const SizedBox(width: 6),
           Flexible(
             child: Text(

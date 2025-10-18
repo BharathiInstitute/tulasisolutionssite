@@ -81,7 +81,6 @@ class TeamPage extends StatelessWidget {
 
 // ===================== Inlined Models & Section =====================
 
-const _bgColor = Color(0xFFF7F4F0);           // Background
 const _primaryAccent = Color(0xFF8AA399);     // Primary accent
 const _highlightAccent = Color(0xFFFF6B6B);   // CTA / highlight
 
@@ -123,18 +122,18 @@ class LeadershipTeamSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 24),
-      decoration: const BoxDecoration(color: _bgColor),
+      padding: const EdgeInsets.only(top: 48, bottom: 28, left: 24, right: 24),
+      decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1200),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const _SectionHeader(),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               _FounderCard(founder: founder),
-              const SizedBox(height: 48),
+              const SizedBox(height: 32),
               _TeamGrid(team: team),
             ],
           ),
@@ -144,13 +143,67 @@ class LeadershipTeamSection extends StatelessWidget {
   }
 }
 
+/// TeamSection: embeddable leadership & team section for About landing
+class TeamSection extends StatelessWidget {
+  const TeamSection({super.key});
+
+  Founder get _founder => const Founder(
+        name: 'Ananya Rao',
+        role: 'Founder & CEO',
+        photoUrl: 'https://images.unsplash.com/photo-1607746882042-944635dfe10e?w=800&auto=format&fit=crop',
+        shortBio: 'Driving Tulasi\'s vision across design, technology and growth with a product-first mindset.',
+        longBio:
+            'Ananya founded Tulasi Solutions to unify branding, technology and automation into a single strategic growth partner. With a background in product strategy and full‑stack delivery, she focuses on building sustainable systems that let clients scale faster with less operational friction. She believes in craftsmanship, measurable outcomes and empowering cross‑functional teams to solve meaningful business problems.',
+      );
+
+  List<TeamMember> get _team => const [
+        TeamMember(
+          name: 'Ravi Kumar',
+          role: 'Head of Engineering',
+          photoUrl: 'https://images.unsplash.com/photo-1595152772835-219674b2a8a6?w=800&auto=format&fit=crop',
+          shortBio: 'Architects scalable platforms & reviews every critical deployment.',
+          longBio:
+              'Ravi leads engineering with a focus on reliability, maintainability and automation. He has delivered cloud-native, multi-tenant solutions across finance, retail and SaaS sectors and is passionate about engineering culture.',
+        ),
+        TeamMember(
+          name: 'Priya Singh',
+          role: 'Design & Brand Lead',
+          photoUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=800&auto=format&fit=crop',
+          shortBio: 'Owns brand systems & elevates user experience across products.',
+          longBio:
+              'Priya blends visual craft with UX systems thinking. She leads brand evolution, accessibility reviews and multi-channel creative direction ensuring consistency and conversion impact.',
+        ),
+        TeamMember(
+          name: 'Arjun Mehta',
+          role: 'Automation Strategist',
+          photoUrl: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=800&auto=format&fit=crop',
+          shortBio: 'Implements workflow automation & marketing orchestration.',
+          longBio:
+              'Arjun specializes in reducing manual repetition through API orchestration and CRM integrations. He helps clients reclaim operational time and unlock compounding growth loops.',
+        ),
+        TeamMember(
+          name: 'Sanya Verma',
+          role: 'Growth Marketing Lead',
+          photoUrl: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=800&auto=format&fit=crop',
+          shortBio: 'Data-driven funnels & lifecycle optimization across channels.',
+          longBio:
+              'Sanya creates iterative experiment frameworks, mapping audience insights to activation, retention and expansion strategies. She is obsessed with cohort analytics and compounding retention.',
+        ),
+      ];
+
+  @override
+  Widget build(BuildContext context) {
+    return LeadershipTeamSection(founder: _founder, team: _team);
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader();
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Row(
           mainAxisSize: MainAxisSize.min,
@@ -159,7 +212,9 @@ class _SectionHeader extends StatelessWidget {
             const SizedBox(width: 10),
             Text(
               'Meet the People Behind Tulasi',
-              style: textTheme.headlineSmall?.copyWith(
+              textAlign: TextAlign.center,
+              style: (textTheme.headlineSmall ?? const TextStyle(fontSize: 24)).copyWith(
+                fontSize: (textTheme.headlineSmall?.fontSize ?? 24) + 8, // increased bump to +8pt
                 fontWeight: FontWeight.w800,
                 color: Colors.black87,
               ),
@@ -169,7 +224,12 @@ class _SectionHeader extends StatelessWidget {
         const SizedBox(height: 12),
         Text(
           'Our cross-functional team covers design, tech, automation, and growth strategy.',
-          style: textTheme.titleMedium?.copyWith(color: Colors.black.withValues(alpha: .70), height: 1.35),
+          textAlign: TextAlign.center,
+          style: (textTheme.titleMedium ?? const TextStyle(fontSize: 16)).copyWith(
+            fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 4, // increased bump to +4pt
+            color: Colors.black.withValues(alpha: .70),
+            height: 1.35,
+          ),
         ),
       ],
     );
@@ -307,18 +367,26 @@ class _TeamGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, c) {
       final w = c.maxWidth;
-      final cols = w >= 1100 ? 3 : (w >= 700 ? 2 : 1);
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: cols,
-            mainAxisExtent: 270,
-          mainAxisSpacing: 22,
-          crossAxisSpacing: 22,
+      final cols = w >= 1200 ? 4 : (w >= 900 ? 3 : (w >= 600 ? 2 : 1));
+      const tileWidth = 340.0;
+      const spacing = 22.0;
+      final gridMaxWidth = (cols * tileWidth) + ((cols - 1) * spacing);
+      return Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: gridMaxWidth),
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              mainAxisExtent: 270,
+              mainAxisSpacing: spacing,
+              crossAxisSpacing: spacing,
+            ),
+            itemCount: team.length,
+            itemBuilder: (context, i) => _TeamMemberCard(member: team[i]),
+          ),
         ),
-        itemCount: team.length,
-        itemBuilder: (context, i) => _TeamMemberCard(member: team[i]),
       );
     });
   }

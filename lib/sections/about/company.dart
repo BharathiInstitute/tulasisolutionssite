@@ -58,6 +58,49 @@ class CompanyPage extends StatelessWidget {
   }
 }
 
+/// CompanySection: embeddable section (no Scaffold) for About landing.
+class CompanySection extends StatelessWidget {
+  const CompanySection({super.key});
+
+  MissionData get _data => const MissionData(
+        headline: 'Our Mission',
+        subtext: 'To simplify growth for businesses by providing an end-to-end digital and operational stack.',
+        story:
+            'Founded to bridge the gap between traditional businesses and digital-first strategies, we\'ve helped clients scale with clarity and speed.',
+        milestones: [
+          MissionMilestone(year: '2019', title: 'Ideation', description: 'Identified fragmentation in SMB digital ops.', icon: Icons.lightbulb_outline),
+          MissionMilestone(year: '2020', title: 'First Clients', description: 'Delivered early multi-channel growth pilots.', icon: Icons.group_outlined),
+          MissionMilestone(year: '2021', title: 'Automation Layer', description: 'Added process + marketing automation modules.', icon: Icons.extension_outlined),
+          MissionMilestone(year: '2023', title: 'Industry Frameworks', description: 'Launched tailored onboarding playbooks.', icon: Icons.domain_outlined),
+          MissionMilestone(year: '2025', title: 'Unified Ops OS', description: 'Evolving into a central growth command center.', icon: Icons.hub_outlined),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final data = _data;
+    final isMobile = MediaQuery.sizeOf(context).width < 760;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _MissionHeader(data: data),
+              const SizedBox(height: 32),
+              _MissionStoryCard(story: data.story),
+              const SizedBox(height: 48),
+              _MissionTimeline(data: data, isMobile: isMobile),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ==================== DATA MODELS ====================
 class MissionData {
   final String headline;

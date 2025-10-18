@@ -27,7 +27,12 @@ class WhatWeDoSection extends StatelessWidget {
     return Container(
   color: bg,
       width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: isMobile ? 56 : 80),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        isMobile ? 40 : 56,
+        16,
+        isMobile ? 20 : 30,
+      ),
       child: isMobile
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,21 +58,24 @@ class WhatWeDoSection extends StatelessWidget {
                     Expanded(
                       flex: 1,
                       child: Align(
-                        alignment: Alignment.topCenter,
+                        alignment: Alignment.topLeft,
                         child: FractionallySizedBox(
-                          widthFactor: 0.82, // narrower than the column width
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).cardColor,
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(color: Colors.black.withValues(alpha: .06)),
-                              boxShadow: [
-                                BoxShadow(color: Colors.black.withValues(alpha: .08), blurRadius: 12, offset: const Offset(0, 6)),
-                              ],
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-                              child: _HorizontalTimeline(steps: steps),
+                          widthFactor: 0.72, // make the container a bit narrower
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minHeight: 320),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).cardColor,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.black.withValues(alpha: .06)),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withValues(alpha: .08), blurRadius: 12, offset: const Offset(0, 6)),
+                                ],
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(12, 28, 18, 28),
+                                child: _HorizontalTimeline(steps: steps, compact: true),
+                              ),
                             ),
                           ),
                         ),
@@ -117,14 +125,15 @@ class _SectionHeadline extends StatelessWidget {
 // Note: Removed the decorative image widget as requested.
 
 class _HorizontalTimeline extends StatelessWidget {
-  const _HorizontalTimeline({required this.steps});
+  const _HorizontalTimeline({required this.steps, this.compact = false});
   final List<_StepData> steps;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 14,
-      runSpacing: 18,
+      spacing: compact ? 12 : 14,
+      runSpacing: compact ? 16 : 18,
       crossAxisAlignment: WrapCrossAlignment.center,
       alignment: WrapAlignment.center,
       children: [
@@ -133,6 +142,7 @@ class _HorizontalTimeline extends StatelessWidget {
             data: steps[i],
             showArrow: false,
             direction: Axis.horizontal,
+            compact: compact,
           ),
       ],
     );
@@ -159,10 +169,11 @@ class _VerticalTimeline extends StatelessWidget {
 }
 
 class _StepCard extends StatefulWidget {
-  const _StepCard({required this.data, required this.showArrow, required this.direction});
+  const _StepCard({required this.data, required this.showArrow, required this.direction, this.compact = false});
   final _StepData data;
   final bool showArrow;
   final Axis direction;
+  final bool compact;
 
   @override
   State<_StepCard> createState() => _StepCardState();
@@ -178,7 +189,7 @@ class _StepCardState extends State<_StepCard> {
     final card = AnimatedContainer(
       duration: const Duration(milliseconds: 140),
       curve: Curves.easeOut,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: EdgeInsets.symmetric(horizontal: widget.compact ? 14 : 16, vertical: widget.compact ? 12 : 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -195,8 +206,8 @@ class _StepCardState extends State<_StepCard> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: widget.compact ? 38 : 44,
+            height: widget.compact ? 38 : 44,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(
@@ -206,7 +217,7 @@ class _StepCardState extends State<_StepCard> {
             ),
             child: Icon(
               widget.data.icon,
-              size: 22,
+              size: widget.compact ? 20 : 22,
               color: gold,
               shadows: _hover
                   ? [
@@ -220,7 +231,7 @@ class _StepCardState extends State<_StepCard> {
           Text(
             widget.data.label,
             style: GoogleFonts.openSans(
-              fontSize: 16,
+              fontSize: widget.compact ? 14.5 : 16,
               fontWeight: FontWeight.w600,
               color: gold,
               height: 1.1,

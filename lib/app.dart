@@ -11,11 +11,6 @@ import 'sections/industries/cosmetics_landing.dart';
 import 'sections/industries/startup_landing.dart';
 import 'pages/pricing_page.dart';
 import 'pages/portfolio_page.dart';
-import 'pages/resources_page.dart';
-import 'sections/resources/blog_page.dart';
-import 'sections/resources/guides_page.dart';
-import 'sections/resources/templates_page.dart';
-import 'sections/resources/faqs_page.dart';
 import 'sections/about/company.dart';
 import 'sections/about/team.dart';
 import 'sections/about/careers.dart';
@@ -151,11 +146,6 @@ class MyApp extends StatelessWidget {
             ),
   '/pricing': (_) => const PricingPage(),
   '/portfolio': (_) => const PortfolioPage(),
-  '/resources': (_) => const ResourcesPage(),
-  '/resources/blog': (_) => const BlogPage(),
-  '/resources/guides': (_) => const GuidesPage(),
-  '/resources/templates': (_) => const TemplatesPage(),
-  '/resources/faqs': (_) => const FaqsPage(),
   '/about/company': (_) => const CompanyPage(),
   '/about/team': (_) => const TeamPage(),
   '/about/careers': (_) => const CareersPage(),
