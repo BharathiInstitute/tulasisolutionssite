@@ -13,8 +13,7 @@ class WhoWeServeSection extends StatelessWidget {
 
   final bg = Theme.of(context).scaffoldBackgroundColor;
     const titleColor = Color(0xFF443F3F);
-    const subtitleColor = Color(0xFF7D5B4C);
-    const gold = Color(0xFFD4AF37);
+  const subtitleColor = Color(0xFF7D5B4C);
 
     final industries = <_IndustryData>[
       _IndustryData('Retail', FeatherIcons.shoppingBag),
@@ -31,10 +30,11 @@ class WhoWeServeSection extends StatelessWidget {
   color: bg,
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(
-        isMobile ? 16 : 80, // left padding
-        isMobile ? 80 : 100,
-        isMobile ? 16 : 16, // reduce right padding on desktop to move container right
-        isMobile ? 80 : 100,
+        isMobile ? 16 : 184, // slight additional right nudge on desktop
+        isMobile ? 44 : 60,
+        isMobile ? 16 : 0, // align closer to the right edge on desktop
+        // Reduce bottom padding to tighten space before next section
+        isMobile ? 16 : 28,
       ),
       child: Align(
         alignment: Alignment.centerLeft,
@@ -43,16 +43,7 @@ class WhoWeServeSection extends StatelessWidget {
           child: Stack(
             children: [
               // Corner accent gradients
-              Positioned(
-                left: -80,
-                top: -60,
-                child: _AccentBlob(start: Colors.blue.withValues(alpha: 0.12), end: Colors.purple.withValues(alpha: 0.10), size: 180),
-              ),
-              Positioned(
-                right: -60,
-                bottom: -60,
-                child: _AccentBlob(start: gold.withValues(alpha: 0.10), end: Colors.transparent, size: 160),
-              ),
+              // Decorative accent blobs removed per request
 
               // Content: two-column on desktop, stacked on mobile
               isMobile
@@ -104,7 +95,8 @@ class WhoWeServeSection extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        // Tighten trailing space on mobile
+                        const SizedBox(height: 0),
                       ],
                     )
                   : Row(
@@ -114,7 +106,7 @@ class WhoWeServeSection extends StatelessWidget {
                         Expanded(
                           flex: 1,
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(96, 100, 24, 0),
+                            padding: const EdgeInsets.fromLTRB(84, 80, 24, 0),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -122,7 +114,7 @@ class WhoWeServeSection extends StatelessWidget {
                                 'Who We Serve',
                                 textAlign: TextAlign.left,
                                 style: GoogleFonts.openSans(
-                                  fontSize: 30,
+                                  fontSize: 42,
                                   fontWeight: FontWeight.w700,
                                   color: titleColor,
                                 ),
@@ -132,7 +124,7 @@ class WhoWeServeSection extends StatelessWidget {
                                 'Ready playbooks per industry.',
                                 textAlign: TextAlign.left,
                                 style: GoogleFonts.openSans(
-                                  fontSize: 20,
+                                  fontSize: 24,
                                   fontWeight: FontWeight.w600,
                                   color: subtitleColor,
                                 ),
@@ -268,28 +260,6 @@ class _IndustryData {
   const _IndustryData(this.label, this.icon);
   final String label;
   final IconData icon;
-}
-
-class _AccentBlob extends StatelessWidget {
-  const _AccentBlob({required this.start, required this.end, required this.size});
-  final Color start;
-  final Color end;
-  final double size;
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [start, end],
-        ),
-      ),
-    );
-  }
 }
 
 // Image widget removed per request; grid moved to right column.

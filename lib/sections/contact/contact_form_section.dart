@@ -35,6 +35,7 @@ class _ContactFormSectionState extends State<ContactFormSection> {
   late final TextEditingController _emailCtrl;
   late final TextEditingController _phoneCtrl;
   late final TextEditingController _messageCtrl;
+  bool _agree = false;
 
   // Track whether controllers were provided by the caller so we only dispose
   // the ones we created.
@@ -73,42 +74,72 @@ class _ContactFormSectionState extends State<ContactFormSection> {
 
   @override
   Widget build(BuildContext context) {
+    // Accent color similar to screenshot_17 style
+    const accent = Color(0xFF0EA5E9); // cyan-500
+
+    InputDecoration _dec(String label) => InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: accent.withValues(alpha: 0.5), width: 1.2)),
+          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: accent, width: 1.6)),
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        );
+
     return Form(
       key: _formKey,
       child: Container(
         key: widget.anchorKey,
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextFormField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
+            TextFormField(controller: _nameCtrl, decoration: _dec('Name')),
             const SizedBox(height: 12),
-            TextFormField(controller: _businessCtrl, decoration: const InputDecoration(labelText: 'Business')),
+            TextFormField(controller: _businessCtrl, decoration: _dec('Business')),
             const SizedBox(height: 12),
-            TextFormField(controller: _emailCtrl, decoration: const InputDecoration(labelText: 'Email')),
+            TextFormField(controller: _emailCtrl, decoration: _dec('Email Address')),
             const SizedBox(height: 12),
-            TextFormField(controller: _phoneCtrl, decoration: const InputDecoration(labelText: 'Phone')),
+            TextFormField(controller: _phoneCtrl, decoration: _dec('Phone')),
             const SizedBox(height: 12),
-            TextFormField(controller: _messageCtrl, decoration: const InputDecoration(labelText: 'Message'), maxLines: 6),
-            const SizedBox(height: 18),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  backgroundColor: Theme.of(context).colorScheme.primary,
+            TextFormField(controller: _messageCtrl, decoration: _dec('Message'), maxLines: 4),
+            const SizedBox(height: 14),
+            CheckboxListTile(
+              value: _agree,
+              onChanged: (v) => setState(() => _agree = v ?? false),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text('I accept terms & conditions', style: TextStyle(fontSize: 13)),
+            ),
+            const SizedBox(height: 8),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _agree
+                    ? () {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Form submitted (placeholder)')));
+                      }
+                    : null,
+                borderRadius: BorderRadius.circular(28),
+                child: Ink(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [Color(0xFF06B6D4), Color(0xFF2563EB)]),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 14),
+                    child: Center(
+                      child: Text(
+                        'Submit & Get Call Back',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
                 ),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Form submitted (placeholder)')));
-                },
-                child: const Text('Submit & Get Call Back'),
               ),
             ),
           ],
@@ -131,22 +162,12 @@ class ContactFormHero extends StatelessWidget {
           width: double.infinity,
           child: AspectRatio(
             aspectRatio: 1200 / 500,
-            child: const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFFF0F7FF), Color(0xFFE6FFFB)],
-                ),
-              ),
-              child: SizedBox.expand(),
-            ),
+            child: Container(color: Theme.of(context).scaffoldBackgroundColor),
           ),
         ),
         if (onScrollToForm != null)
-          Positioned(
-            left: 16,
-            bottom: 16,
+          Align(
+            alignment: Alignment.center,
             child: FilledButton(
               onPressed: onScrollToForm,
               child: const Text('Send us a message'),
@@ -168,23 +189,28 @@ class ContactFormCardSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final w = MediaQuery.sizeOf(context).width;
+    final bool isMobile = w < 700;
     return Container(
-      color: Colors.white,
+      color: Theme.of(context).scaffoldBackgroundColor,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: Center(
         child: ConstrainedBox(
+          // Allow heading/subtitle to be wider so subtitle can be one line
           constraints: const BoxConstraints(maxWidth: 900),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('📝', style: TextStyle(fontSize: 24, color: scheme.primary)),
+                  Text('📝', style: TextStyle(fontSize: isMobile ? 24 : 26, color: scheme.primary)),
                   const SizedBox(width: 8),
                   Text(
                     'Send Us a Message',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontSize: isMobile ? 30 : 34,
                           fontWeight: FontWeight.w800,
                           color: const Color(0xFF0D1B2A),
                         ),
@@ -194,26 +220,32 @@ class ContactFormCardSection extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 'Tell us a bit about your needs. We typically respond within a few hours.',
+                textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: const Color(0xFF284B63),
                     ),
               ),
               const SizedBox(height: 16),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: scheme.primary.withValues(alpha: 0.08),
-                      blurRadius: 18,
-                      offset: const Offset(0, 10),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: scheme.primary.withValues(alpha: 0.08),
+                          blurRadius: 18,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: ContactFormSection(anchorKey: anchorKey),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: ContactFormSection(anchorKey: anchorKey),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -247,7 +279,7 @@ class ContactFooterSection extends StatelessWidget {
                   Text('Industries', style: linkStyle),
                   Text('Pricing', style: linkStyle),
                   Text('Portfolio', style: linkStyle),
-                  Text('Resources', style: linkStyle),
+                  // Resources removed
                 ],
               ),
               const SizedBox(height: 10),

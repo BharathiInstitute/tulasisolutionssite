@@ -72,31 +72,24 @@ class _SiteScaffoldState extends State<SiteScaffold> {
     } else if (id == 'Startup') {
       _navigateIfNotCurrent('/industries', arguments: 'startup');
     } else if (id == 'Pricing' || id == 'View Pricing') {
-      _navigateIfNotCurrent('/pricing');
+      // Pricing page removed; redirect to Contact instead
+      _navigateIfNotCurrent('/contact');
     } else if (id == 'Portfolio' || id == 'View Portfolio') {
       _navigateIfNotCurrent('/portfolio');
-    } else if (id == 'Resources') {
-      _navigateIfNotCurrent('/resources');
-    } else if (id == 'Blog') {
-      _navigateIfNotCurrent('/resources/blog');
-    } else if (id == 'Guides') {
-      _navigateIfNotCurrent('/resources/guides');
-    } else if (id == 'Templates') {
-      _navigateIfNotCurrent('/resources/templates');
-    } else if (id == 'FAQs') {
-      _navigateIfNotCurrent('/resources/faqs');
+    } else if (id == 'Resources' || id == 'Blog' || id == 'Guides' || id == 'Templates' || id == 'FAQs') {
+      // Resources and its subsections removed; route to Home
+      _navigateIfNotCurrent('/home');
     } else if (id == 'About') {
-      // About landing page removed; direct to Company subsection
-      _navigateIfNotCurrent('/about/company');
+      // About landing page exists; go to About directory
+      _navigateIfNotCurrent('/about');
     } else if (id == 'Company') {
-      _navigateIfNotCurrent('/about/company');
+      _navigateIfNotCurrent('/about');
     } else if (id == 'Team') {
-      _navigateIfNotCurrent('/about/team');
+      _navigateIfNotCurrent('/about');
     } else if (id == 'Tools & Partners') {
-      // Tools & Partners section was hosted on removed About landing; redirect to Company
-      _navigateIfNotCurrent('/about/company');
+      _navigateIfNotCurrent('/about');
     } else if (id == 'Careers') {
-      _navigateIfNotCurrent('/about/careers');
+      _navigateIfNotCurrent('/about');
     } else if (id == 'Contact') {
       _navigateIfNotCurrent('/contact');
     } else if (id == 'Form') {

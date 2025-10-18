@@ -7,7 +7,6 @@ class PortfolioPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SiteScaffold(
-      backgroundColor: Colors.transparent,
       body: const SingleChildScrollView(
         physics: ClampingScrollPhysics(),
         child: Column(
@@ -39,7 +38,7 @@ class _IntroSection extends StatelessWidget {
     final items = _samplePortfolioItems;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 16),
-  decoration: const BoxDecoration(color: Colors.transparent),
+  decoration: const BoxDecoration(),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1200),
@@ -178,7 +177,7 @@ class _BeforeAfterSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.transparent,
+      color: Theme.of(context).scaffoldBackgroundColor,
       padding: const EdgeInsets.all(30),
       child: Center(
         child: ConstrainedBox(
@@ -349,7 +348,7 @@ class _ClientQuotesSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final testimonials = _sampleTestimonials;
     return Container(
-      color: Colors.transparent,
+      color: Theme.of(context).scaffoldBackgroundColor,
       padding: const EdgeInsets.all(30),
       child: Center(
         child: ConstrainedBox(

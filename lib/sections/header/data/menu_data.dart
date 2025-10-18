@@ -96,31 +96,9 @@ final List<Map<String, dynamic>> menuData = [
       {"title": "Startup"},
     ]
   },
-  {"title": "Pricing"}, // (4)
+  // {"title": "Pricing"}, // removed
   {"title": "Portfolio"}, // (5)
-  {
-    "title": "Resources", // (6)
-    "children": [
-      {"title": "Blog"},
-      {"title": "Guides"},
-      {"title": "Templates"},
-      {"title": "FAQs"},
-    ]
-  },
-  {
-    "title": "About", // (7) (landing removed; keep direct children to existing sub-pages)
-    "children": [
-      {"title": "Company"},
-      {"title": "Team"},
-      {"title": "Careers"},
-    ]
-  },
-  {
-    "title": "Contact", // (8)
-    "children": [
-      {"title": "Form"},
-      {"title": "WhatsApp"},
-      {"title": "Phone"},
-    ]
-  },
+  // Resources menu removed
+  {"title": "About"}, // (7) dropdown removed; link goes to /about
+  {"title": "Contact"}, // (8) dropdown removed; link goes to /contact
 ];

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../sections/layout/site_scaffold.dart';
 import '../utils/url.dart' as url;
+import '../sections/about/company.dart' show CompanySection;
+import '../sections/about/team.dart' show TeamSection;
+import '../sections/about/careers.dart' show CareersSectionWrapper;
 
 /// Minimal About page acting only as a directory to deeper pages (Company, Team, Careers).
 class AboutPage extends StatefulWidget {
@@ -13,6 +16,9 @@ class AboutPage extends StatefulWidget {
 class _AboutPageState extends State<AboutPage> {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _toolsKey = GlobalKey();
+  final GlobalKey _companyKey = GlobalKey();
+  final GlobalKey _teamKey = GlobalKey();
+  final GlobalKey _careersKey = GlobalKey();
   // Previously nullable; made non-nullable to satisfy lint (stores last processed deep-link section id).
   String _lastArg = '';
 
@@ -38,8 +44,15 @@ class _AboutPageState extends State<AboutPage> {
       : (uri.queryParameters['section'] ?? uri.fragment);
   if (section.isEmpty || section == _lastArg) return; // treat empty as absent
   _lastArg = section;
-  if (section.toLowerCase().contains('tools')) {
+  final lower = section.toLowerCase();
+  if (lower.contains('tools')) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollTo(_toolsKey));
+    } else if (lower.contains('company')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollTo(_companyKey));
+    } else if (lower.contains('team')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollTo(_teamKey));
+    } else if (lower.contains('career')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollTo(_careersKey));
     }
   }
 
@@ -63,30 +76,13 @@ class _AboutPageState extends State<AboutPage> {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Directory section
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 860),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      _Header(),
-                      SizedBox(height: 46),
-                      _AboutLink(label: 'Company & Mission', icon: Icons.flag_circle_outlined, route: '/about/company'),
-                      SizedBox(height: 20),
-                      _AboutLink(label: 'Leadership & Team', icon: Icons.groups_2_outlined, route: '/about/team'),
-                      SizedBox(height: 20),
-                      _AboutLink(label: 'Careers', icon: Icons.work_outline, route: '/about/careers'),
-                      SizedBox(height: 60),
-                      _BackButton(),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
+            // Directory section removed. Page jumps into sections directly.
+            // Embedded sections with anchors
+            Container(key: _companyKey, child: const CompanySection()),
+            const SizedBox(height: 24),
+            Container(key: _teamKey, child: const TeamSection()),
+            const SizedBox(height: 8),
+            Container(key: _careersKey, child: const CareersSectionWrapper()),
             // Tools & Partners section
             _ToolsPartnersSection(key: _toolsKey),
           ],
@@ -97,100 +93,14 @@ class _AboutPageState extends State<AboutPage> {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header();
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const Text('About Tulasi Solutions', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 14),
-        Text(
-          'Choose a section below to explore more about us.',
-          style: TextStyle(fontSize: 16, color: Colors.black.withValues(alpha: .70)),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-}
-
-class _AboutLink extends StatefulWidget {
-  const _AboutLink({required this.label, required this.icon, required this.route});
-  final String label;
-  final IconData icon;
-  final String route;
-  @override
-  State<_AboutLink> createState() => _AboutLinkState();
-}
-
-class _AboutLinkState extends State<_AboutLink> {
-  bool _hover = false;
-  @override
-  Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: () => Navigator.of(context).pushNamed(widget.route),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.black.withValues(alpha: .08)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: _hover ? .18 : .10),
-                blurRadius: _hover ? 20 : 12,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: .10),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(widget.icon, color: accent),
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Text(widget.label, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              ),
-              Icon(Icons.arrow_forward_rounded, color: accent, size: 20),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  const _BackButton();
-  @override
-  Widget build(BuildContext context) {
-    return TextButton.icon(
-      onPressed: () => Navigator.of(context).maybePop(),
-      icon: const Icon(Icons.arrow_back),
-      label: const Text('Back'),
-    );
-  }
-}
+// Removed header/cards/back widgets
 
 class _ToolsPartnersSection extends StatelessWidget {
   const _ToolsPartnersSection({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final bg = const Color(0xFFF7F4F0);
+    final bg = Theme.of(context).scaffoldBackgroundColor;
     final textTheme = Theme.of(context).textTheme;
 
     // Brand tiles without bundled logo assets (colored placeholders only)
@@ -207,10 +117,10 @@ class _ToolsPartnersSection extends StatelessWidget {
     return Container(
       color: bg,
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 20),
+  padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1100),
+          constraints: const BoxConstraints(maxWidth: 1800),
           child: Stack(
             children: [
               // subtle background logo cloud
@@ -234,20 +144,35 @@ class _ToolsPartnersSection extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    'Powered by the Best',
-                    textAlign: TextAlign.center,
-                    style: textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800, color: const Color(0xFF0D1B2A)),
-                  ),
+                  Builder(builder: (context) {
+                    final w = MediaQuery.sizeOf(context).width;
+                    final titleSize = w >= 900 ? 40.0 : 32.0;
+                    return Text(
+                      'Powered by the Best',
+                      textAlign: TextAlign.center,
+                      style: (textTheme.displaySmall ?? const TextStyle()).copyWith(
+                        fontSize: titleSize,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0D1B2A),
+                      ),
+                    );
+                  }),
                   const SizedBox(height: 12),
                   Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 700),
-                      child: Text(
-                        'We integrate and partner with global platforms to bring cutting-edge solutions.',
-                        textAlign: TextAlign.center,
-                        style: textTheme.titleMedium?.copyWith(color: const Color(0xFF284B63)),
-                      ),
+                      child: Builder(builder: (context) {
+                        final w = MediaQuery.sizeOf(context).width;
+                        final subSize = w >= 900 ? 18.0 : 16.0;
+                        return Text(
+                          'We integrate and partner with global platforms to bring cutting-edge solutions.',
+                          textAlign: TextAlign.center,
+                          style: (textTheme.titleMedium ?? const TextStyle()).copyWith(
+                            fontSize: subSize,
+                            color: const Color(0xFF284B63),
+                          ),
+                        );
+                      }),
                     ),
                   ),
                   const SizedBox(height: 28),
@@ -255,25 +180,28 @@ class _ToolsPartnersSection extends StatelessWidget {
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final width = constraints.maxWidth;
-                      int crossAxisCount;
-                      if (width >= 1000) {
-                        crossAxisCount = 4;
-                      } else if (width >= 700) {
-                        crossAxisCount = 3;
-                      } else {
-                        crossAxisCount = 2;
-                      }
-                      return GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          crossAxisSpacing: 18,
-                          mainAxisSpacing: 18,
-                          childAspectRatio: 4.0,
+                      const tileWidth = 190.0;
+                      const spacing = 12.0;
+                      // Compute how many tiles fit per row for the available width.
+                      int cols = ((width + spacing) / (tileWidth + spacing)).floor().clamp(1, logos.length);
+                      // Cap cols by total items so we can keep to a single row when there is enough width.
+                      final maxGridWidth = (cols * tileWidth) + ((cols - 1) * spacing);
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxGridWidth),
+                          child: GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: cols,
+                              crossAxisSpacing: spacing,
+                              mainAxisSpacing: spacing,
+                              childAspectRatio: 4.0,
+                            ),
+                            itemCount: logos.length,
+                            itemBuilder: (context, i) => _LogoTile(item: logos[i]),
+                          ),
                         ),
-                        itemCount: logos.length,
-                        itemBuilder: (context, i) => _LogoTile(item: logos[i]),
                       );
                     },
                   ),

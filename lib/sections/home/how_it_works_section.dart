@@ -27,7 +27,8 @@ class HowItWorksSection extends StatelessWidget {
     return Container(
   color: bg,
       width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: isMobile ? 80 : 100),
+  // Use smaller top padding to reduce gap from previous section; keep bottom generous for next
+  padding: EdgeInsets.fromLTRB(16, isMobile ? 20 : 28, 16, isMobile ? 22 : 36),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1200),
@@ -35,44 +36,40 @@ class HowItWorksSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               if (!isMobile && !isTablet)
-                // Desktop: two columns — left text, right steps
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                // Desktop: stack text above the steps
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Expanded(
-                      flex: 1,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(0, 96, 24, 0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'How It Works',
-                              textAlign: TextAlign.left,
-                              style: GoogleFonts.openSans(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w700,
-                                color: titleColor,
-                              ),
+                    Padding(
+                      // Reduce additional top inset on desktop title block
+                      padding: const EdgeInsets.fromLTRB(0, 16, 0, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            'How It Works',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.openSans(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w700,
+                              color: titleColor,
                             ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Clear milestones & KPIs at each step.',
-                              textAlign: TextAlign.left,
-                              style: GoogleFonts.openSans(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: subtitleColor,
-                              ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Clear milestones & KPIs at each step.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.openSans(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: subtitleColor,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                    Expanded(
-                      flex: 1,
-                      child: _HorizontalSteps(steps: steps),
-                    ),
+                    const SizedBox(height: 28),
+                    Center(child: _HorizontalSteps(steps: steps, compact: true)),
                   ],
                 )
               else ...[
@@ -113,21 +110,22 @@ class HowItWorksSection extends StatelessWidget {
 }
 
 class _HorizontalSteps extends StatelessWidget {
-  const _HorizontalSteps({required this.steps});
+  const _HorizontalSteps({required this.steps, this.compact = false});
   final List<_HowStep> steps;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 16,
-      runSpacing: 18,
+      spacing: compact ? 14 : 16,
+      runSpacing: compact ? 16 : 18,
       crossAxisAlignment: WrapCrossAlignment.center,
       alignment: WrapAlignment.center,
       children: [
         for (int i = 0; i < steps.length; i++) ...[
-          _HowStepCard(step: steps[i], index: i, direction: Axis.horizontal),
+          _HowStepCard(step: steps[i], index: i, direction: Axis.horizontal, compact: compact),
           if (i < steps.length - 1)
-            const Icon(Icons.arrow_forward_ios, size: 18, color: Color(0xFFD4AF37)),
+            Icon(Icons.arrow_forward_ios, size: compact ? 16 : 18, color: const Color(0xFFD4AF37)),
         ],
       ],
     );
@@ -177,10 +175,11 @@ class _GridSteps extends StatelessWidget {
 }
 
 class _HowStepCard extends StatefulWidget {
-  const _HowStepCard({required this.step, required this.index, required this.direction});
+  const _HowStepCard({required this.step, required this.index, required this.direction, this.compact = false});
   final _HowStep step;
   final int index;
   final Axis direction;
+  final bool compact;
 
   @override
   State<_HowStepCard> createState() => _HowStepCardState();
@@ -253,14 +252,14 @@ class _HowStepCardState extends State<_HowStepCard> with SingleTickerProviderSta
     final card = AnimatedContainer(
       duration: const Duration(milliseconds: 140),
       curve: Curves.easeOut,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      padding: EdgeInsets.symmetric(horizontal: widget.compact ? 14 : 16, vertical: widget.compact ? 12 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(widget.compact ? 10 : 12),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: _hover ? 0.08 : 0.05),
-            blurRadius: _hover ? 16 : 10,
+            blurRadius: _hover ? 14 : 10,
             offset: const Offset(0, 6),
           ),
         ],
@@ -270,23 +269,23 @@ class _HowStepCardState extends State<_HowStepCard> with SingleTickerProviderSta
         mainAxisSize: MainAxisSize.min,
         children: [
           number,
-          const SizedBox(height: 8),
-          Icon(widget.step.icon, size: 28, color: gold),
-          const SizedBox(height: 8),
+          SizedBox(height: widget.compact ? 6 : 8),
+          Icon(widget.step.icon, size: widget.compact ? 24 : 28, color: gold),
+          SizedBox(height: widget.compact ? 6 : 8),
           Text(
             widget.step.label,
             textAlign: TextAlign.center,
             style: GoogleFonts.openSans(
-              fontSize: 16,
+              fontSize: widget.compact ? 15 : 16,
               fontWeight: FontWeight.w700,
               color: gold,
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: widget.compact ? 5 : 6),
           Text(
             widget.step.desc,
             textAlign: TextAlign.center,
-            style: GoogleFonts.openSans(fontSize: 12.5, color: Colors.black87),
+            style: GoogleFonts.openSans(fontSize: widget.compact ? 12 : 12.5, color: Colors.black87),
           ),
         ],
       ),

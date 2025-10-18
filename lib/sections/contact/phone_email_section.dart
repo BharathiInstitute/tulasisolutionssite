@@ -8,9 +8,7 @@ class PhoneEmailSection extends StatelessWidget {
     final isNarrow = size.width < 800;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 28),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-      ),
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1100),

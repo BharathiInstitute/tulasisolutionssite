@@ -45,14 +45,7 @@ class MobileDrawer extends StatelessWidget {
                       }
                     }
                   }
-                  if (title == 'Pricing') {
-                    return ExpansionTile(
-                      title: Text(title, style: isActive ? TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold) : null),
-                      children: [
-                        ListTile(title: const Text('View Pricing'), onTap: () => onMenuTap('Pricing')),
-                      ],
-                    );
-                  } else if (children != null && children.isNotEmpty) {
+                  if (children != null && children.isNotEmpty) {
                     final bool isServices = title == 'Services';
                     return ExpansionTile(
                       title: Text(title, style: isActive ? TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold) : null),

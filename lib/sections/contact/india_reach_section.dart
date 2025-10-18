@@ -7,7 +7,7 @@ class IndiaReachSection extends StatelessWidget {
     final areas = const ['Retail', 'Education', 'Cosmetics', 'Printing', 'Services', 'Startups'];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
-      color: Colors.grey.shade50,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1100),

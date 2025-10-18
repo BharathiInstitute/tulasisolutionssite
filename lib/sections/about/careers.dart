@@ -7,8 +7,6 @@ import '../../utils/url.dart' as url;
 // ------------------------------------------------------------
 
 // Color & style constants
-const _gradStart = Color(0xFF8AA399); // top-left
-const _gradEnd = Color(0xFFFF6B6B); // bottom-right
 const _applyAccent = Color(0xFFFF6B6B);
 
 // Data models
@@ -35,34 +33,20 @@ class CareersSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_gradStart, _gradEnd],
-        ),
-        image: illustrationAsset == null
-            ? null
-            : DecorationImage(
-                image: AssetImage(illustrationAsset!),
-                alignment: Alignment.centerRight,
-                fit: BoxFit.contain,
-                opacity: 0.15,
-              ),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 72, horizontal: 24),
+  color: Theme.of(context).scaffoldBackgroundColor,
+  padding: const EdgeInsets.only(top: 28, bottom: 40, left: 24, right: 24),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1200),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const _Header(),
               const SizedBox(height: 28),
               _CultureValues(values: values),
               const SizedBox(height: 40),
               _OpenRolesGrid(openings: openings),
-              const SizedBox(height: 60),
+              const SizedBox(height: 24),
               _GlobalApplyCta(hasExternal: openings.any((o) => o.applyUrl != null)),
             ],
           ),
@@ -72,19 +56,53 @@ class CareersSection extends StatelessWidget {
   }
 }
 
+/// CareersSectionWrapper: embeddable, provides default openings/values.
+class CareersSectionWrapper extends StatelessWidget {
+  const CareersSectionWrapper({super.key});
+
+  List<JobOpening> get _openings => const [
+        JobOpening(
+          title: 'Senior Flutter Engineer',
+          description: 'Build high-performance cross-platform apps. Optimize architecture & mentor juniors.',
+        ),
+        JobOpening(
+          title: 'UI/UX Designer',
+          description: 'Design accessible, conversion-focused user journeys across web + mobile.',
+          applyUrl: 'https://example.com/apply/designer',
+        ),
+      ];
+
+  List<CultureValue> get _values => const [
+        CultureValue(icon: Icons.school_rounded, label: 'Learning'),
+        CultureValue(icon: Icons.emoji_objects_rounded, label: 'Creativity'),
+      ];
+
+  @override
+  Widget build(BuildContext context) {
+    return CareersSection(openings: _openings, values: _values);
+  }
+}
+
 // ---------------- Header ----------------
 class _Header extends StatelessWidget {
   const _Header();
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
+    const titleColor = Color(0xFF0D1B2A);
+    const subtitleColor = Color(0xFF284B63);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final double titleSize = screenWidth >= 900 ? 36 : 30;
+    final double subtitleSize = screenWidth >= 900 ? 18 : 16;
     return Semantics(
       container: true,
       header: true,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
+          Transform.translate(
+            offset: const Offset(-12, 0),
+            child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text('🚀', style: TextStyle(fontSize: 40)),
@@ -92,23 +110,28 @@ class _Header extends StatelessWidget {
               Flexible(
                 child: Text(
                   'Grow With Us',
-                  style: theme.headlineMedium?.copyWith(
+                  style: (theme.headlineMedium ?? const TextStyle()).copyWith(
+                    fontSize: titleSize,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: titleColor,
                     height: 1.05,
                   ),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ],
+            ),
           ),
           const SizedBox(height: 14),
           Text(
             'We\'re always looking for passionate designers, developers, marketers, and strategists.',
-            style: theme.titleMedium?.copyWith(
-              color: Colors.white.withValues(alpha: .85),
+            style: (theme.titleMedium ?? const TextStyle()).copyWith(
+              fontSize: subtitleSize,
+              color: subtitleColor,
               fontWeight: FontWeight.w500,
               height: 1.35,
             ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -122,15 +145,14 @@ class _CultureValues extends StatelessWidget {
   const _CultureValues({required this.values});
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Wrap(
+      alignment: WrapAlignment.center,
       spacing: 14,
       runSpacing: 14,
       children: [
         for (final v in values)
-          _ValueChip(
-            icon: v.icon,
-            label: v.label,
-          ),
+          _ValueChip(icon: v.icon, label: v.label, color: scheme.primary),
       ],
     );
   }
@@ -139,7 +161,8 @@ class _CultureValues extends StatelessWidget {
 class _ValueChip extends StatefulWidget {
   final IconData icon;
   final String label;
-  const _ValueChip({required this.icon, required this.label});
+  final Color color;
+  const _ValueChip({required this.icon, required this.label, required this.color});
   @override
   State<_ValueChip> createState() => _ValueChipState();
 }
@@ -148,6 +171,7 @@ class _ValueChipState extends State<_ValueChip> {
   bool _hover = false;
   @override
   Widget build(BuildContext context) {
+    final c = widget.color;
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -155,19 +179,19 @@ class _ValueChipState extends State<_ValueChip> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .13),
+          color: c.withValues(alpha: .10),
           borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: Colors.white.withValues(alpha: .40), width: 1.4),
+          border: Border.all(color: c.withValues(alpha: .35), width: 1.4),
           boxShadow: [
             if (_hover)
               BoxShadow(
-                color: Colors.black.withValues(alpha: .22),
+                color: Colors.black.withValues(alpha: .18),
                 blurRadius: 14,
                 offset: const Offset(0, 6),
               )
             else
               BoxShadow(
-                color: Colors.black.withValues(alpha: .15),
+                color: Colors.black.withValues(alpha: .12),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -176,12 +200,9 @@ class _ValueChipState extends State<_ValueChip> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(widget.icon, color: Colors.white, size: 18),
+            Icon(widget.icon, color: c, size: 18),
             const SizedBox(width: 8),
-            Text(
-              widget.label,
-              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
-            ),
+            Text(widget.label, style: TextStyle(fontWeight: FontWeight.w600, color: c)),
           ],
         ),
       ),
@@ -196,22 +217,31 @@ class _OpenRolesGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (openings.isEmpty) {
-      return const Text('No open roles right now. Check back soon!', style: TextStyle(color: Colors.white));
+      return const Text('No open roles right now. Check back soon!', style: TextStyle(color: Colors.black87));
     }
     return LayoutBuilder(builder: (context, c) {
       final w = c.maxWidth;
-      final cols = w >= 1100 ? 3 : (w >= 750 ? 2 : 1);
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: cols,
-          mainAxisExtent: 230,
-          crossAxisSpacing: 22,
-          mainAxisSpacing: 22,
+      int cols = w >= 1100 ? 3 : (w >= 750 ? 2 : 1);
+      if (openings.length < cols) cols = openings.length.clamp(1, cols);
+  const tileWidth = 380.0;
+      const spacing = 22.0;
+      final gridMaxWidth = (cols * tileWidth) + ((cols - 1) * spacing);
+      return Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: gridMaxWidth),
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              mainAxisExtent: 230,
+              crossAxisSpacing: spacing,
+              mainAxisSpacing: spacing,
+            ),
+            itemCount: openings.length,
+            itemBuilder: (context, i) => _RoleCard(opening: openings[i]),
+          ),
         ),
-        itemCount: openings.length,
-        itemBuilder: (context, i) => _RoleCard(opening: openings[i]),
       );
     });
   }
