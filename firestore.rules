@@ -1,0 +1,78 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    function isLinkedClient(clientId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/clients/$(clientId))
+        && get(/databases/$(database)/documents/clients/$(clientId)).data.contactEmail == request.auth.token.email;
+    }
+
+    match /users/{userId} {
+      allow create: if signedIn() && (
+        isAdmin()
+        || (request.auth.uid == userId && request.resource.data.isAdmin == false)
+      );
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow update: if signedIn()
+        && (
+          isAdmin()
+          || (request.auth.uid == userId
+              && request.resource.data.isAdmin == resource.data.isAdmin)
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /clients/{clientId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.contactEmail == request.auth.token.email);
+      allow write: if isAdmin();
+
+      match /conversations/{conversationId} {
+        allow read, write: if isAdmin() || isLinkedClient(clientId);
+
+        match /messages/{messageId} {
+          allow read, write: if isAdmin() || isLinkedClient(clientId);
+        }
+      }
+
+      match /contacts/{contactId} {
+        allow read: if isAdmin() || isLinkedClient(clientId);
+        allow write: if isAdmin();
+      }
+
+      match /{document=**} {
+        allow read: if isAdmin() || isLinkedClient(clientId);
+        allow write: if isAdmin();
+      }
+    }
+
+    match /consultations/{consultationId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /plans/{planId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.clientId != null && isLinkedClient(resource.data.clientId));
+      allow write: if isAdmin();
+    }
+
+    match /plan_templates/{templateId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

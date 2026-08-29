@@ -44,6 +44,43 @@
 			"command": "flutter analyze",
 			"isBackground": false,
 			"group": "build"
+		},
+		{
+			"label": "Serve Website",
+			"type": "shell",
+			"command": "npx --yes serve -l 8080 .",
+			"options": { "cwd": "${workspaceFolder}/site" },
+			"isBackground": true,
+			"problemMatcher": {
+				"pattern": { "regexp": "^$" },
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "Serving!",
+					"endsPattern": "Local:"
+				}
+			},
+			"group": "none"
+		},
+		{
+			"label": "Run Flutter App (web)",
+			"type": "shell",
+			"command": "flutter run -d chrome --web-port 5000",
+			"isBackground": true,
+			"problemMatcher": {
+				"pattern": { "regexp": "^$" },
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "Launching",
+					"endsPattern": "lib/main.dart is being served"
+				}
+			},
+			"group": "none"
+		},
+		{
+			"label": "Run App + Site",
+			"dependsOn": ["Serve Website", "Run Flutter App (web)"],
+			"dependsOrder": "parallel",
+			"group": "none"
 		}
 	]
 }

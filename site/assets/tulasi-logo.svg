@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 220" role="img" aria-labelledby="title desc">
+  <title id="title">Tulasi Solutions</title>
+  <desc id="desc">Tulasi Solutions cloud and leaf logo</desc>
+  <defs>
+    <!-- Beautiful green-to-lime gradient matching the original leaf -->
+    <linearGradient id="leafGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#24A64A" />
+      <stop offset="100%" stop-color="#82C51F" />
+    </linearGradient>
+    <linearGradient id="cloudGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#82C51F" />
+      <stop offset="100%" stop-color="#24A64A" />
+    </linearGradient>
+  </defs>
+  
+  <g>
+    <!-- Cloud shape on the left framing TULASI -->
+    <path d="M 64,152 C 28,152 12,132 12,102 C 12,78 30,58 54,58 C 58,58 64,60 68,62 C 78,34 104,18 132,18 C 164,18 188,38 196,68 C 204,64 214,62 224,62 C 256,62 278,86 278,114 C 278,126 274,138 266,146" 
+          fill="none" 
+          stroke="url(#cloudGrad)" 
+          stroke-width="12" 
+          stroke-linecap="round" />
+    <path d="M 64,152 L 180,152" 
+          fill="none" 
+          stroke="url(#cloudGrad)" 
+          stroke-width="12" 
+          stroke-linecap="round" />
+
+    <!-- Highly refined curved Leaf on the right arching over to the left -->
+    <!-- Solid leaf body with green-to-lime gradient -->
+    <path d="M 270,140 C 270,82 322,34 394,22 C 452,10 496,44 496,102 C 496,124 490,144 480,160 C 484,115 464,74 426,52 C 378,26 314,24 246,44 Z" 
+          fill="url(#leafGrad)" />
+          
+    <!-- Main leaf branch / stem curving down -->
+    <path d="M 496,102 C 496,152 492,180 492,204" 
+          fill="none" 
+          stroke="#24A64A" 
+          stroke-width="12" 
+          stroke-linecap="round" />
+
+    <!-- White leaf veins (pure vectors matching the original logo detail) -->
+    <path d="M 312,48 C 352,24 398,22 432,32 C 454,39 474,58 480,82 C 454,64 420,54 384,54" 
+          fill="none" 
+          stroke="#FFFFFF" 
+          stroke-width="6" 
+          stroke-linecap="round" />
+    <path d="M 358,54 C 392,34 428,38 450,54 L 416,54" 
+          fill="none" 
+          stroke="url(#leafGrad)" 
+          stroke-width="4" 
+          stroke-linecap="round" />
+  </g>
+
+  <!-- Clean, bold geometric modern sans-serif typography ensuring consistent cross-platform scaling and rendering -->
+  <text x="108" y="146" 
+        fill="#24A64A" 
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" 
+        font-size="86px" 
+        font-weight="900" 
+        letter-spacing="-1.5px">TULASI</text>
+
+  <text x="114" y="200" 
+        fill="#82C51F" 
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" 
+        font-size="46px" 
+        font-weight="700" 
+        letter-spacing="5.2px">SOLUTIONS</text>
+</svg>

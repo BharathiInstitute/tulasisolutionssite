@@ -32,6 +32,13 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+.firebase/
+**/node_modules/
+
+# Local environment and Firebase Functions secrets
+**/.env
+**/.env.*
+!**/.env.example
 
 # Symbolication related
 app.*.symbols
