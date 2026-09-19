@@ -13,6 +13,58 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "headers": [
+      {
+        "source": "/app",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/app/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store, max-age=0"
+          }
+        ]
+      }
+    ],
+    "redirects": [
+      {
+        "source": "/about",
+        "destination": "/about.html",
+        "type": 302
+      },
+      {
+        "source": "/services",
+        "destination": "/services.html",
+        "type": 302
+      },
+      {
+        "source": "/pricing",
+        "destination": "/pricing.html",
+        "type": 302
+      },
+      {
+        "source": "/how-it-works",
+        "destination": "/how-it-works.html",
+        "type": 302
+      },
+      {
+        "source": "/proof",
+        "destination": "/proof.html",
+        "type": 302
+      },
+      {
+        "source": "/contact",
+        "destination": "/contact.html",
+        "type": 302
+      }
+    ],
     "rewrites": [
       {
         "source": "/app/**",

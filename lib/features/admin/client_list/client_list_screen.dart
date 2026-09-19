@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:tulasisolutionssite/core/chat/chat.dart';
 import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/constants/enums.dart';
@@ -16,8 +18,26 @@ class ClientListScreen extends ConsumerStatefulWidget {
 }
 
 class _ClientListScreenState extends ConsumerState<ClientListScreen> {
-  ClientStage? _selectedStage;
+  ClientStage? _selectedStage = ClientStage.click;
   String _searchQuery = '';
+
+  bool get _hasSearchTerm => _searchQuery.length > 1;
+
+  bool _matchesSearch(Client client) {
+    final searchableDetails = [
+      client.name,
+      client.ownerName,
+      client.category,
+      client.contactEmail,
+      client.contactPhone,
+      client.alternatePhone,
+      client.assignedManager,
+      client.notes,
+      client.followUpNotes,
+      client.stage.displayName,
+    ].whereType<String>().join(' ').toLowerCase();
+    return searchableDetails.contains(_searchQuery);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,19 +58,24 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
       ],
       body: clientsAsync.when(
         data: (clients) {
-          var filteredClients = clients;
+          var stageClients = clients;
 
           if (_selectedStage != null) {
-            filteredClients = filteredClients
+            stageClients = stageClients
                 .where((c) => c.stage == _selectedStage)
                 .toList();
           }
 
-          if (_searchQuery.isNotEmpty) {
-            filteredClients = filteredClients
-                .where((c) => c.name.toLowerCase().contains(_searchQuery))
-                .toList();
+          if (_hasSearchTerm) {
+            stageClients = stageClients.where(_matchesSearch).toList();
           }
+
+          final activeClients = stageClients
+              .where((client) => !client.isArchived)
+              .toList();
+          final archivedClients = stageClients
+              .where((client) => client.isArchived)
+              .toList();
 
           return Column(
             children: [
@@ -60,14 +85,16 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
                   children: [
                     TextField(
                       decoration: InputDecoration(
-                        hintText: 'Search clients by name...',
+                        hintText: 'Type at least 2 characters to search...',
                         prefixIcon: const Icon(Icons.search),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
                       onChanged: (value) {
-                        setState(() => _searchQuery = value.toLowerCase());
+                        setState(
+                          () => _searchQuery = value.trim().toLowerCase(),
+                        );
                       },
                     ),
                     const SizedBox(height: 12),
@@ -75,6 +102,29 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
+                          ...ClientStage.values
+                              .where(
+                                (stage) =>
+                                    stage != ClientStage.reach &&
+                                    stage != ClientStage.register,
+                              )
+                              .map((stage) {
+                                final count = clients
+                                    .where((c) => c.stage == stage)
+                                    .length;
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: FilterChip(
+                                    label: Text(
+                                      '${stage.displayName} ($count)',
+                                    ),
+                                    selected: _selectedStage == stage,
+                                    onSelected: (_) {
+                                      setState(() => _selectedStage = stage);
+                                    },
+                                  ),
+                                );
+                              }),
                           FilterChip(
                             label: Text('All (${clients.length})'),
                             selected: _selectedStage == null,
@@ -82,22 +132,6 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
                               setState(() => _selectedStage = null);
                             },
                           ),
-                          const SizedBox(width: 8),
-                          ...ClientStage.values.map((stage) {
-                            final count = clients
-                                .where((c) => c.stage == stage)
-                                .length;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: FilterChip(
-                                label: Text('${stage.displayName} ($count)'),
-                                selected: _selectedStage == stage,
-                                onSelected: (_) {
-                                  setState(() => _selectedStage = stage);
-                                },
-                              ),
-                            );
-                          }),
                         ],
                       ),
                     ),
@@ -105,15 +139,19 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
                 ),
               ),
               Expanded(
-                child: filteredClients.isEmpty
-                    ? const Center(child: Text('No clients found'))
-                    : ListView.builder(
-                        itemCount: filteredClients.length,
-                        itemBuilder: (context, index) {
-                          final client = filteredClients[index];
-                          return ClientCard(client: client);
-                        },
-                      ),
+                child: ListView(
+                  children: [
+                    if (activeClients.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: Text('No active leads found')),
+                      )
+                    else
+                      for (final client in activeClients)
+                        ClientCard(client: client),
+                    _ArchivedLeadsSection(clients: archivedClients),
+                  ],
+                ),
               ),
             ],
           );
@@ -183,6 +221,13 @@ class ClientCard extends ConsumerWidget {
           .read(firestoreServiceProvider)
           .updateClient(client.copyWith(stage: stage));
       ref.invalidate(clientsListProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${client.name} moved to ${stage.displayName}'),
+          ),
+        );
+      }
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -205,6 +250,158 @@ class ClientCard extends ConsumerWidget {
     ref.invalidate(clientsListProvider);
   }
 
+  Future<void> _setArchived(
+    BuildContext context,
+    WidgetRef ref,
+    bool isArchived,
+  ) async {
+    try {
+      await ref
+          .read(firestoreServiceProvider)
+          .updateClient(client.copyWith(isArchived: isArchived));
+      ref.invalidate(clientsListProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isArchived
+                  ? '${client.name} archived'
+                  : '${client.name} restored to ${client.stage.displayName}',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update archive: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _editNotes(BuildContext context, WidgetRef ref) async {
+    final notesController = TextEditingController(text: client.notes ?? '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Notes: ${client.name}'),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: notesController,
+            autofocus: true,
+            minLines: 4,
+            maxLines: 8,
+            decoration: const InputDecoration(
+              hintText: 'Add notes about this client...',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Save notes'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved == true) {
+      try {
+        await ref
+            .read(firestoreServiceProvider)
+            .updateClient(client.copyWith(notes: notesController.text.trim()));
+        ref.invalidate(clientsListProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Notes saved')));
+        }
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not save notes: $error')),
+          );
+        }
+      }
+    }
+    notesController.dispose();
+  }
+
+  Future<void> _deleteLostClient(BuildContext context, WidgetRef ref) async {
+    final confirmationController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete lost lead?'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('You are deleting: ${client.name}'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: confirmationController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Type delete to confirm',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: confirmationController,
+            builder: (context, value, child) => ElevatedButton(
+              onPressed: value.text == 'delete'
+                  ? () => Navigator.of(dialogContext).pop(true)
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Delete'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await ref.read(firestoreServiceProvider).deleteClient(client.id);
+        ref.invalidate(clientsListProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('${client.name} deleted')));
+        }
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not delete client: $error')),
+          );
+        }
+      }
+    }
+    confirmationController.dispose();
+  }
+
   Future<void> _showFollowUpSettings(
     BuildContext context,
     WidgetRef ref,
@@ -215,6 +412,38 @@ class ClientCard extends ConsumerWidget {
           FollowUpSettingsDialog(client: client, ref: ref),
     );
     ref.invalidate(clientsListProvider);
+  }
+
+  Future<void> _openWhatsAppChat(BuildContext context, WidgetRef ref) async {
+    final phone = client.contactPhone.trim();
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This lead has no WhatsApp phone number.'),
+        ),
+      );
+      return;
+    }
+
+    final chat = ref.read(chatProvider);
+    final existing = chat.conversations.where(
+      (conversation) =>
+          conversation.clientId == client.id &&
+          conversation.channel == ConversationChannel.whatsapp &&
+          (conversation.contactId == client.id ||
+              conversation.contactPhone.replaceAll(RegExp(r'\D'), '') ==
+                  phone.replaceAll(RegExp(r'\D'), '')),
+    );
+    final conversation = existing.isNotEmpty
+        ? existing.first
+        : await chat.createConversation(
+            contactId: client.id,
+            contactName: client.name,
+            contactPhone: phone,
+            ownerClientId: client.id,
+          );
+    if (conversation == null || !context.mounted) return;
+    context.push('/admin/chat/${conversation.id}', extra: conversation);
   }
 
   @override
@@ -242,6 +471,12 @@ class ClientCard extends ConsumerWidget {
               ),
             if (client.contactPhone.trim().isNotEmpty)
               _detailLine(Icons.phone_outlined, 'Phone', client.contactPhone),
+            if (client.alternatePhone?.trim().isNotEmpty == true)
+              _detailLine(
+                Icons.phone_android_outlined,
+                'Alternate phone',
+                client.alternatePhone!,
+              ),
             if (client.contactEmail.trim().isNotEmpty)
               _detailLine(Icons.email_outlined, 'Email', client.contactEmail),
             if (client.category.trim().isNotEmpty)
@@ -250,6 +485,11 @@ class ClientCard extends ConsumerWidget {
               Icons.schedule_outlined,
               'Created',
               _formatDateTime(client.createdDate),
+            ),
+            _detailLine(
+              Icons.app_registration_outlined,
+              'Registration',
+              _isRegistered ? 'Registered' : 'Not registered',
             ),
             if (client.followUpAt != null)
               StreamBuilder<int>(
@@ -309,6 +549,11 @@ class ClientCard extends ConsumerWidget {
                 tooltip: 'Change funnel stage',
                 onSelected: (stage) => _changeStage(context, ref, stage),
                 itemBuilder: (context) => ClientStage.values
+                    .where(
+                      (stage) =>
+                          stage != ClientStage.reach &&
+                          stage != ClientStage.register,
+                    )
                     .map(
                       (stage) => PopupMenuItem(
                         value: stage,
@@ -385,6 +630,11 @@ class ClientCard extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
+                    tooltip: 'Open WhatsApp chat',
+                    icon: const Icon(Icons.chat, color: Color(0xFF25D366)),
+                    onPressed: () => _openWhatsAppChat(context, ref),
+                  ),
+                  IconButton(
                     tooltip: 'Follow-up settings',
                     icon: Icon(
                       Icons.alarm_outlined,
@@ -392,6 +642,30 @@ class ClientCard extends ConsumerWidget {
                     ),
                     onPressed: () => _showFollowUpSettings(context, ref),
                   ),
+                  IconButton(
+                    tooltip: 'Add or edit notes',
+                    icon: const Icon(Icons.note_add_outlined),
+                    onPressed: () => _editNotes(context, ref),
+                  ),
+                  if (showFunnelStage)
+                    IconButton(
+                      tooltip: client.isArchived
+                          ? 'Restore lead'
+                          : 'Archive lead',
+                      icon: Icon(
+                        client.isArchived
+                            ? Icons.unarchive_outlined
+                            : Icons.archive_outlined,
+                      ),
+                      onPressed: () =>
+                          _setArchived(context, ref, !client.isArchived),
+                    ),
+                  if (client.stage == ClientStage.lost)
+                    IconButton(
+                      tooltip: 'Delete lost lead',
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _deleteLostClient(context, ref),
+                    ),
                   IconButton(
                     tooltip: 'Edit client details',
                     icon: const Icon(Icons.edit_outlined),
@@ -428,6 +702,14 @@ class ClientCard extends ConsumerWidget {
     return '${minutes == 0 ? 1 : minutes}m';
   }
 
+  bool get _isRegistered =>
+      client.name.trim().isNotEmpty &&
+      (client.ownerName?.trim().isNotEmpty ?? false) &&
+      client.category.trim().isNotEmpty &&
+      client.contactEmail.trim().isNotEmpty &&
+      client.contactPhone.trim().isNotEmpty &&
+      (client.alternatePhone?.trim().isNotEmpty ?? false);
+
   String _formatDateTime(DateTime value) {
     final local = value.toLocal();
     final day = local.day.toString().padLeft(2, '0');
@@ -440,6 +722,36 @@ class ClientCard extends ConsumerWidget {
     final minute = local.minute.toString().padLeft(2, '0');
     final period = local.hour >= 12 ? 'PM' : 'AM';
     return '$day/$month/${local.year}, $hour:$minute $period';
+  }
+}
+
+class _ArchivedLeadsSection extends StatelessWidget {
+  final List<Client> clients;
+
+  const _ArchivedLeadsSection({required this.clients});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: ExpansionTile(
+          leading: const Icon(Icons.archive_outlined),
+          title: Text('Archived (${clients.length})'),
+          children: [
+            if (clients.isEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Text('No archived leads in this funnel stage'),
+              )
+            else
+              for (final client in clients)
+                ClientCard(key: ValueKey(client.id), client: client),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -549,7 +861,11 @@ class _FollowUpSettingsDialogState extends State<FollowUpSettingsDialog> {
     final dateLabel = _followUpAt == null
         ? 'No follow-up scheduled'
         : '${_followUpAt!.day}/${_followUpAt!.month}/${_followUpAt!.year} at '
-              '${_followUpAt!.hour.toString().padLeft(2, '0')}:${_followUpAt!.minute.toString().padLeft(2, '0')}';
+              '${_followUpAt!.hour == 0
+                  ? 12
+                  : _followUpAt!.hour > 12
+                  ? _followUpAt!.hour - 12
+                  : _followUpAt!.hour}:${_followUpAt!.minute.toString().padLeft(2, '0')} ${_followUpAt!.hour >= 12 ? 'PM' : 'AM'}';
     return AlertDialog(
       title: const Text('Follow-up settings'),
       content: SizedBox(

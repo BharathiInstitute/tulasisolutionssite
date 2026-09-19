@@ -48,12 +48,55 @@ const msg91Sms = __importStar(require("./msg91/msg91-sms"));
 const msg91Voice = __importStar(require("./msg91/msg91-voice"));
 const utils_1 = require("./utils");
 const msg91_client_1 = require("./msg91/msg91-client");
+function formatFailureReason(unknownError) {
+    const message = unknownError instanceof Error
+        ? unknownError.message
+        : String(unknownError);
+    const detailsMarker = " | Details:";
+    const concise = message.includes(detailsMarker)
+        ? message.substring(0, message.indexOf(detailsMarker))
+        : message;
+    return concise.replace(/^MSG91 error \[\d+\]:\s*/, "").trim();
+}
+async function resolveEnqueueClientId(request) {
+    if (!request.auth?.uid) {
+        throw new https_1.HttpsError("unauthenticated", "Authentication required");
+    }
+    const requestedClientId = request.data.clientId?.trim();
+    if (!requestedClientId) {
+        return (0, config_1.getCallerClient)(request.auth);
+    }
+    const userSnap = await config_1.db.collection("users").doc(request.auth.uid).get();
+    const userData = userSnap.data();
+    const panels = Array.isArray(userData?.panels) ? userData.panels : [];
+    if (userData?.isAdmin === true || panels.includes("chat")) {
+        return { uid: request.auth.uid, clientId: requestedClientId };
+    }
+    const caller = await (0, config_1.getCallerClient)(request.auth);
+    if (caller.clientId !== requestedClientId) {
+        throw new https_1.HttpsError("permission-denied", "Cannot send messages for this client");
+    }
+    return caller;
+}
+async function claimPendingMessage(queueMessageRef) {
+    return config_1.db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(queueMessageRef);
+        if (!snapshot.exists || snapshot.data()?.status !== "pending")
+            return false;
+        transaction.update(queueMessageRef, {
+            status: "sending",
+            claimedAt: new Date(),
+        });
+        return true;
+    });
+}
 /**
  * Processes pending messages in the queue.
- * Runs every 2 minutes — sends via MSG91 and updates status.
+ * Runs every 30 minutes as a recovery pass for delayed or retried messages.
+ * Immediate messages are handled by onMessageQueued.
  */
 exports.processMessageQueue = (0, scheduler_1.onSchedule)({
-    schedule: "every 2 minutes",
+    schedule: "every 30 minutes",
     region: "asia-south1",
     secrets: [config_1.msg91AuthKey, config_1.msg91WhatsAppNumber],
 }, async () => {
@@ -72,6 +115,9 @@ exports.processMessageQueue = (0, scheduler_1.onSchedule)({
             const data = doc.data();
             const channel = data.channel ?? "whatsapp";
             const retries = data.retries ?? 0;
+            const scheduledAt = data.scheduledAt?.toDate?.();
+            if (scheduledAt && scheduledAt > new Date())
+                continue;
             if (retries >= 3) {
                 await doc.ref.update({
                     status: "failed",
@@ -84,6 +130,8 @@ exports.processMessageQueue = (0, scheduler_1.onSchedule)({
                 }
                 continue;
             }
+            if (!await claimPendingMessage(doc.ref))
+                continue;
             // Get contact phone
             let phone = data.phone;
             if (!phone && data.contactId) {
@@ -101,7 +149,6 @@ exports.processMessageQueue = (0, scheduler_1.onSchedule)({
             }
             const normalizedPhone = (0, utils_1.normalizePhone)(phone);
             try {
-                await doc.ref.update({ status: "sending" });
                 logger.info(`Sending ${channel} message to ${normalizedPhone} (raw: ${phone})`, { docId: doc.id, content: data.content?.substring(0, 50) });
                 // Get this client's WhatsApp number (per-client or global fallback)
                 let clientWaNumber;
@@ -253,7 +300,7 @@ exports.processMessageQueue = (0, scheduler_1.onSchedule)({
  * Enqueue a single message for sending via any channel.
  */
 exports.enqueueMessage = (0, https_1.onCall)(config_1.callableOptions, async (request) => {
-    const { uid, clientId } = await (0, config_1.getCallerClient)(request.auth);
+    const { uid, clientId } = await resolveEnqueueClientId(request);
     const { contactId, content, channel, mediaUrl, mediaType, templateName, flowId, voiceFlowId } = request.data;
     // Normalize templateParams: accept Map<string,string> from Flutter or Array<{type,value}>
     let templateParams = request.data.templateParams;
@@ -325,6 +372,9 @@ exports.onMessageQueued = (0, firestore_1.onDocumentCreated)({
     const data = snap.data();
     if (data.status !== "pending")
         return;
+    const scheduledAt = data.scheduledAt?.toDate?.();
+    if (scheduledAt && scheduledAt > new Date())
+        return;
     const clientId = event.params.clientId;
     const channel = data.channel ?? "whatsapp";
     const retries = data.retries ?? 0;
@@ -341,7 +391,8 @@ exports.onMessageQueued = (0, firestore_1.onDocumentCreated)({
     }
     const normalizedPhone = (0, utils_1.normalizePhone)(phone);
     try {
-        await snap.ref.update({ status: "sending" });
+        if (!await claimPendingMessage(snap.ref))
+            return;
         logger.info(`[realtime] Sending ${channel} message to ${normalizedPhone} (raw: ${phone}) templateName=${data.templateName ?? "null"} templateParams=${JSON.stringify(data.templateParams)}`);
         // Get this client's WhatsApp number (per-client or global fallback)
         let clientWaNumber;
@@ -459,9 +510,20 @@ exports.onMessageQueued = (0, firestore_1.onDocumentCreated)({
                 logger.warn(`[realtime] Failed to update message doc: ${msgErr}`);
             }
         }
+        const clientRef = config_1.db.collection(config_1.Collections.clients).doc(clientId);
+        const clientSnapshot = await clientRef.get();
+        if (clientSnapshot.data()?.stage === "reach") {
+            await clientRef.update({
+                stage: "click",
+                stageChangedAt: new Date(),
+                followUpAt: null,
+                followUpNotes: null,
+            });
+        }
     }
     catch (err) {
         logger.error(`[realtime] Send failed for ${normalizedPhone}:`, err);
+        const failureReason = formatFailureReason(err);
         // Update message doc to failed status
         const conversationId = data.conversationId;
         const messageDocId = data.messageDocId;
@@ -469,14 +531,14 @@ exports.onMessageQueued = (0, firestore_1.onDocumentCreated)({
             try {
                 await config_1.db
                     .doc(`${(0, config_1.clientCol)(clientId, config_1.Collections.conversations)}/${conversationId}/${config_1.Collections.messages}/${messageDocId}`)
-                    .update({ status: "failed" });
+                    .update({ status: "failed", failureReason });
             }
             catch (_) { /* ignore */ }
         }
         await snap.ref.update({
             status: "pending",
             retries: retries + 1,
-            lastError: String(err),
+            lastError: failureReason,
         });
     }
 });

@@ -145,6 +145,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  Future<void> _showContact() async {
+    final contactId = widget.conversation.contactId;
+    if (contactId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This conversation has no contact record.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final contact = await ref.read(chatProvider).getContact(contactId);
+      if (!mounted) return;
+
+      if (contact == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Contact record was not found.')),
+        );
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) => _ContactSheet(
+          contact: contact,
+          fallbackName: widget.conversation.contactName,
+          fallbackPhone: widget.conversation.contactPhone,
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to load contact details.')),
+        );
+      }
+    }
+  }
+
   Color get _channelColor => switch (_activeChannel) {
     ConversationChannel.whatsapp => const Color(0xFF25D366),
     ConversationChannel.sms => Colors.blue,
@@ -178,6 +217,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
+  Future<void> _openDialer() async {
+    final phone = widget.conversation.contactPhone.trim();
+    if (phone.replaceAll(RegExp(r'\D'), '').isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This conversation has no phone number.')),
+      );
+      return;
+    }
+
+    final opened = await launchUrl(Uri(scheme: 'tel', path: phone));
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open the phone dialer.')),
+      );
+    }
+  }
+
   void _showTemplatePicker() async {
     final msg91 = ref.read(chatProvider).msg91Service;
     if (msg91 == null) {
@@ -192,6 +248,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       isScrollControlled: true,
       builder: (_) => _TemplatePickerSheet(
         msg91: msg91,
+        clientId: widget.conversation.clientId,
         contactName: widget.conversation.contactName,
         onSend: (template, paramValues) async {
           Navigator.of(context).pop();
@@ -225,9 +282,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       currentRoute: '/admin/chat',
       title: widget.conversation.contactName,
       actions: [
-        IconButton(icon: const Icon(Icons.phone), onPressed: () {}),
+        IconButton(
+          icon: const Icon(Icons.phone),
+          tooltip: 'Call ${widget.conversation.contactPhone}',
+          onPressed: _openDialer,
+        ),
         PopupMenuButton<String>(
           onSelected: (value) {
+            if (value == 'profile') _showContact();
             if (value == 'template') _showTemplatePicker();
           },
           itemBuilder: (context) => [
@@ -318,15 +380,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     itemCount: messages.length,
                     itemBuilder: (context, i) {
                       final msg = messages[i];
+                      final messageTime = msg.eventAt ?? msg.createdAt;
+                      final previousMessageTime = i == 0
+                          ? null
+                          : messages[i - 1].eventAt ??
+                                messages[i - 1].createdAt;
                       final isOutbound =
                           msg.direction == MessageDirection.outbound;
                       final showDate =
                           i == 0 ||
-                          !_isSameDay(messages[i - 1].createdAt, msg.createdAt);
+                          !_isSameDay(previousMessageTime!, messageTime);
 
                       return Column(
                         children: [
-                          if (showDate) _DateChip(date: msg.createdAt),
+                          if (showDate) _DateChip(date: messageTime),
                           _MessageBubble(message: msg, isOutbound: isOutbound),
                         ],
                       );
@@ -591,7 +658,9 @@ class _DateChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final diff = now.difference(date).inDays;
+    final today = DateTime(now.year, now.month, now.day);
+    final messageDay = DateTime(date.year, date.month, date.day);
+    final diff = today.difference(messageDay).inDays;
     final label = diff == 0
         ? 'Today'
         : diff == 1
@@ -613,6 +682,64 @@ class _DateChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ContactSheet extends StatelessWidget {
+  final Map<String, dynamic> contact;
+  final String fallbackName;
+  final String fallbackPhone;
+
+  const _ContactSheet({
+    required this.contact,
+    required this.fallbackName,
+    required this.fallbackPhone,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = contact['name'] as String? ?? fallbackName;
+    final phone = contact['phone'] as String? ?? fallbackPhone;
+    final email = contact['email'] as String?;
+
+    return AlertDialog(
+      title: Text(name),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ContactDetail(icon: Icons.phone_outlined, value: phone),
+          if (email != null && email.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _ContactDetail(icon: Icons.email_outlined, value: email),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ContactDetail extends StatelessWidget {
+  final IconData icon;
+  final String value;
+
+  const _ContactDetail({required this.icon, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 12),
+        Expanded(child: Text(value)),
+      ],
     );
   }
 }
@@ -702,6 +829,19 @@ class _MessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildMessageContent(context, theme),
+            if (isOutbound &&
+                message.status == MessageStatus.failed &&
+                message.failureReason?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 6),
+              Text(
+                message.failureReason!.trim(),
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
             const SizedBox(height: 4),
             Align(
               alignment: Alignment.centerRight,
@@ -709,7 +849,7 @@ class _MessageBubble extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _formatTime(message.createdAt),
+                    _formatTime(message.eventAt ?? message.createdAt),
                     style: TextStyle(
                       fontSize: 10,
                       color: isOutbound
@@ -747,115 +887,215 @@ class _MessageBubble extends StatelessWidget {
   }
 
   Widget _buildMessageContent(BuildContext context, ThemeData theme) {
-    final mediaUrl = message.mediaUrl;
-    final hasMedia = mediaUrl != null && mediaUrl.isNotEmpty;
+    final mediaUrl = message.mediaUrl ?? '';
+    final hasMedia = mediaUrl.isNotEmpty;
     final textColor = isOutbound ? Colors.black87 : theme.colorScheme.onSurface;
     final content = message.content.trim();
     final isPlaceholder =
         content == '[Image]' ||
         content == '[Sticker]' ||
         content == '[Audio]' ||
-        content == '[Media]';
+        content == '[Media]' ||
+        content == '[Video]' ||
+        content == '[Document]' ||
+        content == '[Location]' ||
+        content == '[Template]' ||
+        content == '[Call]';
     final showText = content.isNotEmpty && !isPlaceholder;
 
-    final mediaKind = _inferMediaKind();
-
-    if (hasMedia && (mediaKind == 'image' || mediaKind == 'sticker')) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: () => _openMediaUrl(context, mediaUrl),
-            borderRadius: BorderRadius.circular(10),
-            child: ClipRRect(
+    switch (message.type) {
+      case MessageType.image:
+      case MessageType.sticker:
+        if (hasMedia) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InkWell(
+                onTap: () => _openMediaUrl(context, mediaUrl),
+                borderRadius: BorderRadius.circular(10),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(
+                    mediaUrl,
+                    width: message.type == MessageType.sticker ? 140 : 220,
+                    height: message.type == MessageType.sticker ? 140 : 220,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 180,
+                      height: 120,
+                      color: theme.colorScheme.surfaceContainer,
+                      alignment: Alignment.center,
+                      child: const Text('Image unavailable'),
+                    ),
+                  ),
+                ),
+              ),
+              if (showText) ...[
+                const SizedBox(height: 6),
+                Text(content, style: TextStyle(fontSize: 14, color: textColor)),
+              ],
+            ],
+          );
+        }
+        break;
+      case MessageType.video:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: hasMedia ? () => _openMediaUrl(context, mediaUrl) : null,
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                mediaUrl,
-                width: mediaKind == 'sticker' ? 140 : 220,
-                height: mediaKind == 'sticker' ? 140 : 220,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 180,
-                  height: 120,
-                  color: theme.colorScheme.surfaceContainer,
-                  alignment: Alignment.center,
-                  child: const Text('Image unavailable'),
+              child: Container(
+                width: 220,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.videocam_rounded, size: 22),
+                    SizedBox(width: 8),
+                    Text('Video'),
+                  ],
                 ),
               ),
             ),
-          ),
-          if (showText) ...[
-            const SizedBox(height: 6),
-            Text(content, style: TextStyle(fontSize: 14, color: textColor)),
+            if (showText) ...[
+              const SizedBox(height: 6),
+              Text(content, style: TextStyle(fontSize: 14, color: textColor)),
+            ],
           ],
-        ],
-      );
-    }
-
-    if (hasMedia && mediaKind == 'audio') {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: () => _openMediaUrl(context, mediaUrl),
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface.withAlpha(120),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.play_circle_fill, size: 20),
-                  SizedBox(width: 6),
-                  Text('Play audio'),
-                ],
+        );
+      case MessageType.audio:
+      case MessageType.voiceNote:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: hasMedia ? () => _openMediaUrl(context, mediaUrl) : null,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface.withAlpha(120),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      message.type == MessageType.voiceNote
+                          ? Icons.mic_none_rounded
+                          : Icons.headphones_rounded,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      message.type == MessageType.voiceNote
+                          ? 'Voice note'
+                          : 'Audio',
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          if (showText) ...[
-            const SizedBox(height: 6),
-            Text(content, style: TextStyle(fontSize: 14, color: textColor)),
+            if (showText) ...[
+              const SizedBox(height: 6),
+              Text(content, style: TextStyle(fontSize: 14, color: textColor)),
+            ],
           ],
-        ],
-      );
+        );
+      case MessageType.document:
+        return InkWell(
+          onTap: hasMedia ? () => _openMediaUrl(context, mediaUrl) : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.insert_drive_file_rounded, size: 20),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    content.isEmpty ? 'Document' : content,
+                    style: TextStyle(fontSize: 14, color: textColor),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      case MessageType.location:
+        return Container(
+          width: 220,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.location_on_rounded, color: Colors.red),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  content.isEmpty ? 'Shared location' : content,
+                  style: TextStyle(fontSize: 14, color: textColor),
+                ),
+              ),
+            ],
+          ),
+        );
+      case MessageType.template:
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer.withAlpha(120),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            content.isEmpty ? 'Template message' : content,
+            style: TextStyle(fontSize: 14, color: textColor),
+          ),
+        );
+      case MessageType.call:
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.call_rounded, size: 18),
+              SizedBox(width: 8),
+              Text('Call'),
+            ],
+          ),
+        );
+      case MessageType.text:
+        return Text(
+          content.isEmpty ? '[Unsupported message]' : content,
+          style: TextStyle(fontSize: 14, color: textColor),
+        );
     }
 
     return Text(
       content.isEmpty ? '[Unsupported message]' : content,
       style: TextStyle(fontSize: 14, color: textColor),
     );
-  }
-
-  String _inferMediaKind() {
-    final typeName = message.type.name.toLowerCase();
-    final mediaType = (message.mediaType ?? '').toLowerCase();
-    final mediaUrl = (message.mediaUrl ?? '').toLowerCase();
-    final combined = '$typeName $mediaType';
-
-    if (combined.contains('sticker')) return 'sticker';
-    if (combined.contains('audio') || combined.contains('voice')) {
-      return 'audio';
-    }
-    if (combined.contains('video')) return 'video';
-    if (combined.contains('image') || combined.contains('gif')) return 'image';
-
-    if (mediaUrl.contains('.gif') ||
-        mediaUrl.contains('.jpg') ||
-        mediaUrl.contains('.jpeg') ||
-        mediaUrl.contains('.png') ||
-        mediaUrl.contains('.webp')) {
-      return 'image';
-    }
-    if (mediaUrl.contains('.mp3') ||
-        mediaUrl.contains('.wav') ||
-        mediaUrl.contains('.ogg')) {
-      return 'audio';
-    }
-
-    return 'unknown';
   }
 
   Future<void> _openMediaUrl(BuildContext context, String url) async {
@@ -870,9 +1110,14 @@ class _MessageBubble extends StatelessWidget {
   }
 
   String _formatTime(DateTime dt) {
-    final h = dt.hour.toString().padLeft(2, '0');
+    final h = dt.hour == 0
+        ? 12
+        : dt.hour > 12
+        ? dt.hour - 12
+        : dt.hour;
     final m = dt.minute.toString().padLeft(2, '0');
-    return '$h:$m';
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$h:$m $period';
   }
 }
 
@@ -896,12 +1141,14 @@ class _QuickReply extends StatelessWidget {
 
 class _TemplatePickerSheet extends StatefulWidget {
   final MSG91Service msg91;
+  final String clientId;
   final String contactName;
   final Future<void> Function(MessageTemplate template, List<String> params)
   onSend;
 
   const _TemplatePickerSheet({
     required this.msg91,
+    required this.clientId,
     required this.contactName,
     required this.onSend,
   });
@@ -936,7 +1183,13 @@ class _TemplatePickerSheetState extends State<_TemplatePickerSheet> {
     try {
       final templates = await widget.msg91.getTemplates(channel: 'whatsapp');
       setState(() {
-        _templates = templates.where((t) => t.status == 'approved').toList();
+        _templates = templates
+            .where(
+              (template) =>
+                  template.status.toLowerCase() == 'approved' &&
+                  template.content.trim().isNotEmpty,
+            )
+            .toList();
         _loading = false;
       });
     } catch (e) {
@@ -1069,7 +1322,7 @@ class _TemplatePickerSheetState extends State<_TemplatePickerSheet> {
         child: Padding(
           padding: EdgeInsets.all(32),
           child: Text(
-            'No approved WhatsApp templates found.\nCreate templates in the Template Management screen.',
+            'No approved WhatsApp templates with sendable message text were found.',
           ),
         ),
       );
@@ -1107,7 +1360,8 @@ class _TemplatePickerSheetState extends State<_TemplatePickerSheet> {
   }
 
   Widget _buildParamForm(ScrollController scrollController) {
-    final params = _extractParams(_selected!.content);
+    final content = _selected!.content.trim();
+    final params = _extractParams(content);
     return ListView(
       controller: scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1119,7 +1373,12 @@ class _TemplatePickerSheetState extends State<_TemplatePickerSheet> {
             color: const Color(0xFFDCF8C6),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Text(_getPreview(), style: const TextStyle(fontSize: 14)),
+          child: Text(
+            content.isEmpty
+                ? 'MSG91 did not provide this template body.'
+                : _getPreview(),
+            style: const TextStyle(fontSize: 14),
+          ),
         ),
         for (var i = 0; i < params.length; i++)
           Padding(
@@ -1134,7 +1393,14 @@ class _TemplatePickerSheetState extends State<_TemplatePickerSheet> {
               onChanged: (_) => setState(() {}),
             ),
           ),
-        if (params.isEmpty)
+        if (content.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Parameters cannot be shown until MSG91 returns the template body.',
+            ),
+          )
+        else if (params.isEmpty)
           const Padding(
             padding: EdgeInsets.all(16),
             child: Text(

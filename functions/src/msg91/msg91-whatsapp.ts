@@ -39,9 +39,49 @@ export interface WhatsAppTemplate {
   id: string;
   name: string;
   status: string;
+  enabled: boolean;
   category: string;
   language: string;
   body?: string;
+}
+
+function readTemplateBody(template: Record<string, unknown>, language: Record<string, unknown>): string | undefined {
+  const candidates = [
+    language.body,
+    language.content,
+    language.message,
+    language.template,
+    template.body,
+    template.content,
+    template.message,
+    template.template,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+
+  const components = language.components ?? template.components;
+  if (Array.isArray(components)) {
+    const body = components.find((component) => {
+      const item = component as Record<string, unknown>;
+      return String(item.type ?? "").toLowerCase() === "body";
+    }) as Record<string, unknown> | undefined;
+    const text = body?.text;
+    if (typeof text === "string" && text.trim()) return text.trim();
+  }
+
+  const code = language.code ?? template.code;
+  if (Array.isArray(code)) {
+    const body = code.find((component) => {
+      const item = component as Record<string, unknown>;
+      return String(item.type ?? "").toLowerCase() === "body";
+    }) as Record<string, unknown> | undefined;
+    const text = body?.text;
+    if (typeof text === "string" && text.trim()) return text.trim();
+  }
+
+  return undefined;
 }
 
 export interface WebhookPayload {
@@ -180,6 +220,7 @@ export async function listTemplates(overrideNumber?: string): Promise<WhatsAppTe
     undefined,
     "GET",
   );
+  logger.info("MSG91 listTemplates response:", JSON.stringify(result));
 
   const raw = result.templates ?? result.data;
   const templates = (Array.isArray(raw) ? raw : []) as Record<string, unknown>[];
@@ -191,9 +232,10 @@ export async function listTemplates(overrideNumber?: string): Promise<WhatsAppTe
       id: String(language.msg91_template_id ?? language.id ?? template.id ?? ""),
       name: String(template.name ?? language.name ?? ""),
       status: String(language.status ?? template.status ?? "unknown").toUpperCase(),
+      enabled: Number(language.is_disabled ?? template.is_disabled ?? 0) === 0,
       category: String(template.category ?? "utility"),
       language: String(language.language ?? template.language ?? "en"),
-      body: (language.body ?? template.body) as string | undefined,
+      body: readTemplateBody(template, language),
     }));
   });
 }
@@ -319,6 +361,36 @@ export async function sendReadReceipt(
 }
 
 // ── Parse Inbound Webhook ────────────────────────────────────
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function firstMessage(body: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (Array.isArray(body.messages)) {
+    return asRecord(body.messages[0]);
+  }
+
+  if (typeof body.messages !== "string" || body.messages.trim() === "") {
+    return undefined;
+  }
+
+  try {
+    const messages = JSON.parse(body.messages);
+    return Array.isArray(messages) ? asRecord(messages[0]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 export function parseWebhook(body: Record<string, unknown>): WebhookPayload {
   // MSG91 delivery reports have eventName (sent/delivered/read/failed) and direction "1"
   const eventName = body.eventName as string | undefined;
@@ -336,11 +408,14 @@ export function parseWebhook(body: Record<string, unknown>): WebhookPayload {
   }
 
   // Inbound message from customer
-  const payload = (body.payload as Record<string, unknown> | undefined) ??
-    (body.message as Record<string, unknown> | undefined) ??
-    (Array.isArray(body.messages)
-      ? (body.messages[0] as Record<string, unknown> | undefined)
-      : undefined);
+  const message = firstMessage(body);
+  const payload =
+    asRecord(body.payload) ??
+    asRecord(body.message) ??
+    message;
+  const messageText = asRecord(message?.text);
+  const referral = asRecord(message?.referral);
+  const messageTimestamp = firstNonEmptyString(message?.timestamp, body.ts);
 
   const mediaUrl =
     (body.url as string | undefined) ??
@@ -360,12 +435,16 @@ export function parseWebhook(body: Record<string, unknown>): WebhookPayload {
     ((payload?.audio as Record<string, unknown> | undefined)?.link as string | undefined) ??
     ((payload?.sticker as Record<string, unknown> | undefined)?.link as string | undefined);
 
-  const bodyText =
-    (body.text as string | undefined) ??
-    (body.body as string | undefined) ??
-    (payload?.text as string | undefined) ??
-    (payload?.caption as string | undefined) ??
-    (payload?.body as string | undefined);
+  const bodyText = firstNonEmptyString(
+    body.text,
+    body.body,
+    payload?.text,
+    payload?.caption,
+    payload?.body,
+    messageText?.body,
+    referral?.text,
+    referral?.headline,
+  );
 
   let messageType = (
     (body.messageType as string | undefined) ??
@@ -399,6 +478,6 @@ export function parseWebhook(body: Record<string, unknown>): WebhookPayload {
     body: bodyText,
     messageType,
     mediaUrl: mediaUrl || undefined,
-    timestamp: body.ts as string | undefined,
+    timestamp: messageTimestamp,
   };
 }

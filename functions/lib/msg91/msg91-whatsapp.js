@@ -47,6 +47,43 @@ exports.sendReadReceipt = sendReadReceipt;
 exports.parseWebhook = parseWebhook;
 const msg91_client_1 = require("./msg91-client");
 const logger = __importStar(require("firebase-functions/logger"));
+function readTemplateBody(template, language) {
+    const candidates = [
+        language.body,
+        language.content,
+        language.message,
+        language.template,
+        template.body,
+        template.content,
+        template.message,
+        template.template,
+    ];
+    for (const candidate of candidates) {
+        if (typeof candidate === "string" && candidate.trim())
+            return candidate.trim();
+    }
+    const components = language.components ?? template.components;
+    if (Array.isArray(components)) {
+        const body = components.find((component) => {
+            const item = component;
+            return String(item.type ?? "").toLowerCase() === "body";
+        });
+        const text = body?.text;
+        if (typeof text === "string" && text.trim())
+            return text.trim();
+    }
+    const code = language.code ?? template.code;
+    if (Array.isArray(code)) {
+        const body = code.find((component) => {
+            const item = component;
+            return String(item.type ?? "").toLowerCase() === "body";
+        });
+        const text = body?.text;
+        if (typeof text === "string" && text.trim())
+            return text.trim();
+    }
+    return undefined;
+}
 // ── Send Template Message (outbound, outside 24hr window) ────
 async function sendWhatsAppMessage(msg) {
     const integratedNumber = msg.integratedNumber ?? (0, msg91_client_1.getWhatsAppIntegratedNumber)();
@@ -133,6 +170,7 @@ async function sendWhatsAppMedia(msg) {
 async function listTemplates(overrideNumber) {
     const integratedNumber = overrideNumber ?? (0, msg91_client_1.getWhatsAppIntegratedNumber)();
     const result = await (0, msg91_client_1.sendRequest)(`${msg91_client_1.MSG91_BASE_URL}/whatsapp/get-template-client/${integratedNumber}`, undefined, "GET");
+    logger.info("MSG91 listTemplates response:", JSON.stringify(result));
     const raw = result.templates ?? result.data;
     const templates = (Array.isArray(raw) ? raw : []);
     return templates.flatMap((template) => {
@@ -143,9 +181,10 @@ async function listTemplates(overrideNumber) {
             id: String(language.msg91_template_id ?? language.id ?? template.id ?? ""),
             name: String(template.name ?? language.name ?? ""),
             status: String(language.status ?? template.status ?? "unknown").toUpperCase(),
+            enabled: Number(language.is_disabled ?? template.is_disabled ?? 0) === 0,
             category: String(template.category ?? "utility"),
             language: String(language.language ?? template.language ?? "en"),
-            body: (language.body ?? template.body),
+            body: readTemplateBody(template, language),
         }));
     });
 }
@@ -238,6 +277,33 @@ async function sendReadReceipt(whatsappMessageId, _recipientNumber) {
     return { success: true };
 }
 // ── Parse Inbound Webhook ────────────────────────────────────
+function asRecord(value) {
+    return value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : undefined;
+}
+function firstMessage(body) {
+    if (Array.isArray(body.messages)) {
+        return asRecord(body.messages[0]);
+    }
+    if (typeof body.messages !== "string" || body.messages.trim() === "") {
+        return undefined;
+    }
+    try {
+        const messages = JSON.parse(body.messages);
+        return Array.isArray(messages) ? asRecord(messages[0]) : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+function firstNonEmptyString(...values) {
+    for (const value of values) {
+        if (typeof value === "string" && value.trim())
+            return value.trim();
+    }
+    return undefined;
+}
 function parseWebhook(body) {
     // MSG91 delivery reports have eventName (sent/delivered/read/failed) and direction "1"
     const eventName = body.eventName;
@@ -253,11 +319,13 @@ function parseWebhook(body) {
         };
     }
     // Inbound message from customer
-    const payload = body.payload ??
-        body.message ??
-        (Array.isArray(body.messages)
-            ? body.messages[0]
-            : undefined);
+    const message = firstMessage(body);
+    const payload = asRecord(body.payload) ??
+        asRecord(body.message) ??
+        message;
+    const messageText = asRecord(message?.text);
+    const referral = asRecord(message?.referral);
+    const messageTimestamp = firstNonEmptyString(message?.timestamp, body.ts);
     const mediaUrl = body.url ??
         body.mediaUrl ??
         body.media_url ??
@@ -274,11 +342,7 @@ function parseWebhook(body) {
         payload?.document?.link ??
         payload?.audio?.link ??
         payload?.sticker?.link;
-    const bodyText = body.text ??
-        body.body ??
-        payload?.text ??
-        payload?.caption ??
-        payload?.body;
+    const bodyText = firstNonEmptyString(body.text, body.body, payload?.text, payload?.caption, payload?.body, messageText?.body, referral?.text, referral?.headline);
     let messageType = (body.messageType ??
         body.contentType ??
         payload?.messageType ??
@@ -312,7 +376,7 @@ function parseWebhook(body) {
         body: bodyText,
         messageType,
         mediaUrl: mediaUrl || undefined,
-        timestamp: body.ts,
+        timestamp: messageTimestamp,
     };
 }
 //# sourceMappingURL=msg91-whatsapp.js.map

@@ -19,13 +19,10 @@ class _FeatureFieldControllers {
       text = TextEditingController(text: text);
 
   factory _FeatureFieldControllers.fromRaw(String raw) {
-    final parsed = parseFeature(raw);
-    return _FeatureFieldControllers(
-      category: parsed.category == defaultFeatureCategory
-          ? ''
-          : parsed.category,
-      text: parsed.text,
-    );
+    final separatorIndex = raw.indexOf(': ');
+    final category = separatorIndex > 0 ? raw.substring(0, separatorIndex) : '';
+    final text = separatorIndex > 0 ? raw.substring(separatorIndex + 2) : raw;
+    return _FeatureFieldControllers(category: category, text: text);
   }
 
   void dispose() {
@@ -38,12 +35,14 @@ class _FeatureFieldControllers {
 /// Template dialog and the Assign Plan dialog.
 class _FeatureListEditor extends StatelessWidget {
   final List<_FeatureFieldControllers> controllers;
+  final PlanType planType;
   final VoidCallback onAdd;
   final void Function(int index) onRemove;
   final String addLabel;
 
   const _FeatureListEditor({
     required this.controllers,
+    required this.planType,
     required this.onAdd,
     required this.onRemove,
     this.addLabel = 'Add feature',
@@ -51,6 +50,9 @@ class _FeatureListEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final categories = planType == PlanType.subscription
+        ? subscriptionPlanFeatureCategories
+        : setupPlanFeatureCategories;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -74,12 +76,23 @@ class _FeatureListEditor extends StatelessWidget {
               children: [
                 Expanded(
                   flex: 2,
-                  child: TextField(
-                    controller: row.category,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g. Content',
-                      labelText: 'Category',
-                    ),
+                  child: DropdownButtonFormField<String>(
+                    initialValue: categories.contains(row.category.text)
+                        ? row.category.text
+                        : null,
+                    decoration: const InputDecoration(labelText: 'Category'),
+                    hint: const Text('Select category'),
+                    items: categories
+                        .map(
+                          (category) => DropdownMenuItem(
+                            value: category,
+                            child: Text(category),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (category) {
+                      row.category.text = category ?? '';
+                    },
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -291,7 +304,12 @@ class _TemplateCard extends StatelessWidget {
         trailing: Text('${template.features.length} features'),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         children: [
-          GroupedFeatureList(features: template.features),
+          GroupedFeatureList(
+            features: template.features,
+            categoryOrder: template.type == PlanType.subscription
+                ? subscriptionPlanFeatureCategories
+                : setupPlanFeatureCategories,
+          ),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -395,7 +413,15 @@ class _PlanTemplateDialogState extends ConsumerState<_PlanTemplateDialog> {
   }
 
   void _addFeatureField() {
-    setState(() => _featureRows.add(_FeatureFieldControllers()));
+    setState(
+      () => _featureRows.add(
+        _FeatureFieldControllers(
+          category: _type == PlanType.subscription
+              ? visionAndPlanFeatureCategory
+              : '',
+        ),
+      ),
+    );
   }
 
   void _removeFeatureField(int index) {
@@ -493,6 +519,7 @@ class _PlanTemplateDialogState extends ConsumerState<_PlanTemplateDialog> {
               const SizedBox(height: 16),
               _FeatureListEditor(
                 controllers: _featureRows,
+                planType: _type,
                 onAdd: _addFeatureField,
                 onRemove: _removeFeatureField,
               ),
@@ -844,6 +871,9 @@ class _ClientPlanTile extends ConsumerWidget {
             features: plan.features,
             completedFeatures: plan.completedFeatures,
             featureProgress: plan.featureProgress,
+            categoryOrder: plan.type == PlanType.subscription
+                ? subscriptionPlanFeatureCategories
+                : setupPlanFeatureCategories,
             onToggle: (raw, done) => _toggleFeature(ref, raw, done),
             onProgressChange: (raw, percent) =>
                 _updateFeatureProgress(ref, raw, percent),
@@ -855,7 +885,7 @@ class _ClientPlanTile extends ConsumerWidget {
               TextButton.icon(
                 onPressed: onTap,
                 icon: const Icon(Icons.edit_outlined),
-                label: const Text('Edit'),
+                label: const Text('Change Plan'),
               ),
               TextButton.icon(
                 onPressed: onDelete,
@@ -896,6 +926,7 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
   late List<_FeatureFieldControllers> _featureRows;
+  late List<ClientTask> _tasks;
   late DateTime _startDate;
   DateTime? _endDate;
   bool _isLoading = false;
@@ -912,6 +943,7 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
     _featureRows = (widget.existing?.features ?? const [''])
         .map((f) => _FeatureFieldControllers.fromRaw(f))
         .toList();
+    _tasks = List<ClientTask>.from(widget.existing?.tasks ?? const []);
     if (_featureRows.isEmpty) {
       _featureRows.add(_FeatureFieldControllers());
     }
@@ -940,9 +972,18 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
       for (final row in _featureRows) {
         row.dispose();
       }
-      _featureRows = template.features
-          .map((f) => _FeatureFieldControllers.fromRaw(f))
-          .toList();
+      if (widget.existing != null) {
+        final merged = widget.existing!.mergeTemplateTasks(template);
+        _tasks = merged.tasks;
+        _featureRows = merged.features
+            .map((feature) => _FeatureFieldControllers.fromRaw(feature))
+            .toList();
+      } else {
+        _tasks = template.tasks.map(ClientTask.fromTemplate).toList();
+        _featureRows = template.features
+            .map((f) => _FeatureFieldControllers.fromRaw(f))
+            .toList();
+      }
       if (_featureRows.isEmpty) {
         _featureRows.add(_FeatureFieldControllers());
       }
@@ -950,7 +991,15 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
   }
 
   void _addFeatureField() {
-    setState(() => _featureRows.add(_FeatureFieldControllers()));
+    setState(
+      () => _featureRows.add(
+        _FeatureFieldControllers(
+          category: _type == PlanType.subscription
+              ? visionAndPlanFeatureCategory
+              : '',
+        ),
+      ),
+    );
   }
 
   void _removeFeatureField(int index) {
@@ -992,6 +1041,20 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
           .where((row) => row.text.text.trim().isNotEmpty)
           .map((row) => encodeFeature(row.category.text, row.text.text))
           .toList();
+      final tasksByFeature = {for (final task in _tasks) task.feature: task};
+      final tasks = <ClientTask>[
+        for (var index = 0; index < features.length; index++)
+          tasksByFeature[features[index]] ??
+              ClientTask(
+                id: const Uuid().v4(),
+                category: _featureRows[index].category.text.trim(),
+                title: _featureRows[index].text.text.trim(),
+                order: index,
+                source: _templateId == null
+                    ? ClientTaskSource.customIncluded
+                    : ClientTaskSource.template,
+              ),
+      ];
       final plan = Plan(
         id: widget.existing?.id ?? const Uuid().v4(),
         clientId: _clientId,
@@ -1000,6 +1063,10 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
         name: _nameController.text.trim(),
         price: price,
         features: features,
+        tasks: tasks,
+        completedFeatures: widget.existing?.completedFeatures ?? const [],
+        featureProgress: widget.existing?.featureProgress ?? const {},
+        taskWorkflow: widget.existing?.taskWorkflow ?? const {},
         startDate: _startDate,
         endDate: _endDate,
       );
@@ -1020,7 +1087,7 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.existing != null ? 'Edit Plan' : 'Assign Plan'),
+      title: Text(widget.existing != null ? 'Change Plan' : 'Assign Plan'),
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(
@@ -1069,7 +1136,14 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
                       ),
                 ],
                 onChanged: _applyTemplate,
-                decoration: const InputDecoration(labelText: 'From template'),
+                decoration: InputDecoration(
+                  labelText: widget.existing != null
+                      ? 'Change to template'
+                      : 'From template',
+                  helperText: widget.existing != null
+                      ? 'Existing task titles are preserved; new items are added.'
+                      : null,
+                ),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -1110,6 +1184,7 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
               const SizedBox(height: 16),
               _FeatureListEditor(
                 controllers: _featureRows,
+                planType: _type,
                 onAdd: _addFeatureField,
                 onRemove: _removeFeatureField,
                 addLabel: 'Add',

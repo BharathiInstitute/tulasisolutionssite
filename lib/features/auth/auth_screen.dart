@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/widgets/brand_logo.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
   final bool isAdmin;
@@ -62,6 +63,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   String _messageFor(Object error) {
     final text = error.toString();
     return text.startsWith('Exception: ') ? text.substring(11) : text;
+  }
+
+  Future<void> _returnToWebsite() {
+    return launchUrl(
+      Uri.parse('https://tulasisolutions.com'),
+      mode: LaunchMode.platformDefault,
+    );
   }
 
   InputDecoration _fieldDecoration(String hintText) {
@@ -353,6 +361,23 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                               ? 'User login'
                                               : 'Admin login',
                                           style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: _isLoading
+                                            ? null
+                                            : _returnToWebsite,
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: deepGreen,
+                                          padding: EdgeInsets.zero,
+                                          minimumSize: const Size(0, 30),
+                                        ),
+                                        child: const Text(
+                                          'Back to website',
+                                          style: TextStyle(
                                             fontSize: 15,
                                             fontWeight: FontWeight.w600,
                                           ),

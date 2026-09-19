@@ -1,7 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/enums.dart';
+import '../models/brand_brief.dart';
 import '../models/models.dart';
+import '../models/website_brief.dart';
+import '../models/weekly_report.dart';
+import '../performance/performance_models.dart';
 
 class FirebaseAuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -28,6 +32,9 @@ class FirebaseAuthService {
           'email': email,
           'name': name,
           'isAdmin': isAdmin,
+          'role': '',
+          'team': '',
+          'panels': const <String>[],
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
@@ -65,39 +72,6 @@ class FirebaseAuthService {
     }
   }
 
-  Future<void> updateAccountDetails({
-    required String name,
-    String? email,
-    String? newPassword,
-  }) async {
-    final user = _auth.currentUser;
-    if (user == null) {
-      throw StateError('No authenticated user');
-    }
-
-    try {
-      final normalizedEmail = email?.trim();
-      if (normalizedEmail != null &&
-          normalizedEmail.isNotEmpty &&
-          normalizedEmail != user.email) {
-        await user.updateEmail(normalizedEmail);
-      }
-      if (newPassword != null && newPassword.isNotEmpty) {
-        await user.updatePassword(newPassword);
-      }
-      await user.updateDisplayName(name.trim());
-      await _firestore.collection('users').doc(user.uid).set({
-        'uid': user.uid,
-        'email': user.email,
-        'name': name.trim(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } on FirebaseAuthException catch (e) {
-      print('Account update error: ${e.message}');
-      rethrow;
-    }
-  }
-
   // Get current user
   User? getCurrentUser() {
     return _auth.currentUser;
@@ -114,6 +88,37 @@ class FirebaseAuthService {
     }
   }
 
+  Future<AppUser?> getUserProfile(String uid) async {
+    final email = _auth.currentUser?.email?.trim().toLowerCase();
+    if (email != null && email.isNotEmpty) {
+      final staffDoc = await _firestore.collection('users').doc(email).get();
+      if (staffDoc.exists) {
+        return AppUser.fromFirestore(staffDoc, isAdminOverride: false);
+      }
+    }
+
+    final directDoc = await _firestore.collection('users').doc(uid).get();
+    return directDoc.exists ? AppUser.fromFirestore(directDoc) : null;
+  }
+
+  Stream<AppUser?> getUserProfileStream(String uid) {
+    final email = _auth.currentUser?.email?.trim().toLowerCase();
+    if (email == null || email.isEmpty) {
+      return _firestore
+          .collection('users')
+          .doc(uid)
+          .snapshots()
+          .map((doc) => doc.exists ? AppUser.fromFirestore(doc) : null);
+    }
+
+    return _firestore.collection('users').doc(email).snapshots().asyncMap((
+      doc,
+    ) async {
+      if (doc.exists) return AppUser.fromFirestore(doc, isAdminOverride: false);
+      return getUserProfile(uid);
+    });
+  }
+
   // Sign out
   Future<void> signOut() async {
     await _auth.signOut();
@@ -127,6 +132,100 @@ class FirebaseAuthService {
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  Stream<List<VideoSubmission>> getPerformanceSubmissionsStream() {
+    return _firestore
+        .collection('performance_submissions')
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs.map(VideoSubmission.fromFirestore).toList(),
+        );
+  }
+
+  Stream<List<DailyHours>> getPerformanceHoursStream() {
+    return _firestore
+        .collection('performance_hours')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs.map(DailyHours.fromFirestore).toList(),
+        );
+  }
+
+  Stream<List<AttendanceRecord>> getPerformanceAttendanceStream() {
+    return _firestore
+        .collection('performance_attendance')
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs.map(AttendanceRecord.fromFirestore).toList(),
+        );
+  }
+
+  Future<void> createPerformanceSubmission(VideoSubmission submission) {
+    return _firestore
+        .collection('performance_submissions')
+        .doc(submission.id)
+        .set(submission.toFirestore());
+  }
+
+  Future<void> savePerformanceHours(DailyHours record) {
+    return _firestore
+        .collection('performance_hours')
+        .doc(record.id)
+        .set(record.toFirestore());
+  }
+
+  Future<void> approvePerformanceSubmission({
+    required String submissionId,
+    required List<bool> checklist,
+    required bool uploadedToCorrectFolder,
+    required String approvedBy,
+    required String pointsCategory,
+    required double awardedPoints,
+  }) {
+    return _firestore
+        .collection('performance_submissions')
+        .doc(submissionId)
+        .update({
+          'checklist': checklist,
+          'uploadedToCorrectFolder': uploadedToCorrectFolder,
+          'signedOffBy': approvedBy,
+          'pointsCategory': pointsCategory,
+          'awardedPoints': awardedPoints,
+          'approvedAt': FieldValue.serverTimestamp(),
+        });
+  }
+
+  Future<void> updatePerformanceSubmission({
+    required String submissionId,
+    required DateTime submittedAt,
+    required String contentName,
+    required String contentLink,
+    required String type,
+    required String pointsCategory,
+    required double awardedPoints,
+  }) {
+    return _firestore
+        .collection('performance_submissions')
+        .doc(submissionId)
+        .update({
+          'submittedAt': Timestamp.fromDate(submittedAt),
+          'contentName': contentName,
+          'contentLink': contentLink,
+          'type': type,
+          'pointsCategory': pointsCategory,
+          'awardedPoints': awardedPoints,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+  }
+
+  Future<void> deletePerformanceSubmission(String submissionId) {
+    return _firestore
+        .collection('performance_submissions')
+        .doc(submissionId)
+        .delete();
+  }
 
   // Users (admin management)
   Stream<List<AppUser>> getUsersStream() {
@@ -154,6 +253,8 @@ class FirestoreService {
     required String name,
     required String email,
     required String role,
+    String team = '',
+    List<String> panels = const [],
   }) async {
     final normalizedEmail = email.trim();
     final normalizedName = name.trim();
@@ -170,9 +271,30 @@ class FirestoreService {
       'email': normalizedEmail,
       'name': normalizedName,
       'isAdmin': false,
+      'isStaff': true,
       'role': normalizedRole,
+      'team': team.trim(),
+      'panels': panels,
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  Future<void> updateStaffMember({
+    required String uid,
+    required String name,
+    required String role,
+    required String team,
+    required List<String> panels,
+  }) async {
+    await _firestore.collection('users').doc(uid).update({
+      'name': name.trim(),
+      'role': role.trim(),
+      'team': team.trim(),
+      'isAdmin': false,
+      'isStaff': true,
+      'panels': panels,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // Clients
@@ -192,6 +314,16 @@ class FirestoreService {
       print('Error creating client: $e');
       rethrow;
     }
+  }
+
+  Future<bool> createClientIfAbsent(Client client) async {
+    final clientRef = _firestore.collection('clients').doc(client.id);
+    return _firestore.runTransaction((transaction) async {
+      final existing = await transaction.get(clientRef);
+      if (existing.exists) return false;
+      transaction.set(clientRef, client.toFirestore());
+      return true;
+    });
   }
 
   Future<Client?> getClient(String clientId) async {
@@ -256,6 +388,36 @@ class FirestoreService {
       print('Error updating client: $e');
       rethrow;
     }
+  }
+
+  Future<void> deleteClient(String clientId) {
+    return _firestore.collection('clients').doc(clientId).delete();
+  }
+
+  Stream<List<SalesTask>> getSalesTasksStream() {
+    return _firestore.collection('sales_tasks').snapshots().map((snapshot) {
+      final tasks = snapshot.docs.map(SalesTask.fromFirestore).toList();
+      tasks.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return tasks;
+    });
+  }
+
+  Future<void> createSalesTask(SalesTask task) {
+    return _firestore
+        .collection('sales_tasks')
+        .doc(task.id)
+        .set(task.toFirestore());
+  }
+
+  Future<void> updateSalesTask(SalesTask task) {
+    return _firestore
+        .collection('sales_tasks')
+        .doc(task.id)
+        .update(task.toFirestore());
+  }
+
+  Future<void> deleteSalesTask(String taskId) {
+    return _firestore.collection('sales_tasks').doc(taskId).delete();
   }
 
   // Setup Checklist Items
@@ -472,6 +634,121 @@ class FirestoreService {
       print('Error deleting plan: $e');
       rethrow;
     }
+  }
+
+  Stream<List<WeeklyReport>> getWeeklyReportsStream(String clientId) {
+    return _firestore
+        .collection('weekly_reports')
+        .where('clientId', isEqualTo: clientId)
+        .snapshots()
+        .map((snapshot) {
+          final reports = snapshot.docs
+              .map(WeeklyReport.fromFirestore)
+              .toList();
+          reports.sort(
+            (left, right) => right.periodEnd.compareTo(left.periodEnd),
+          );
+          return reports;
+        });
+  }
+
+  Future<void> saveWeeklyReport(WeeklyReport report) {
+    return _firestore
+        .collection('weekly_reports')
+        .doc(report.id)
+        .set(report.toFirestore());
+  }
+
+  // Website briefs
+  Stream<WebsiteBrief?> getWebsiteBriefStream(String planId) {
+    return _firestore
+        .collection('website_briefs')
+        .doc(planId)
+        .snapshots()
+        .map((doc) => doc.exists ? WebsiteBrief.fromFirestore(doc) : null);
+  }
+
+  Stream<List<WebsiteBrief>> getClientWebsiteBriefsStream(String clientId) {
+    return _firestore
+        .collection('website_briefs')
+        .where('clientId', isEqualTo: clientId)
+        .snapshots()
+        .map((snapshot) {
+          final briefs = snapshot.docs
+              .map((doc) => WebsiteBrief.fromFirestore(doc))
+              .toList();
+          briefs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          return briefs;
+        });
+  }
+
+  Stream<List<WebsiteBrief>> getAllWebsiteBriefsStream() {
+    return _firestore.collection('website_briefs').snapshots().map((snapshot) {
+      final briefs = snapshot.docs
+          .map((doc) => WebsiteBrief.fromFirestore(doc))
+          .toList();
+      briefs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return briefs;
+    });
+  }
+
+  Future<void> saveWebsiteBrief(WebsiteBrief brief) async {
+    await _firestore
+        .collection('website_briefs')
+        .doc(brief.planId)
+        .set(brief.toFirestore(), SetOptions(merge: true));
+  }
+
+  Future<void> approveWebsiteBriefVersion(WebsiteBrief brief) async {
+    final batch = _firestore.batch();
+    final briefRef = _firestore.collection('website_briefs').doc(brief.planId);
+    final versionRef = briefRef.collection('versions').doc();
+    batch.set(briefRef, brief.toFirestore(), SetOptions(merge: true));
+    batch.set(versionRef, {
+      ...brief.toFirestore(),
+      'versionId': versionRef.id,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  }
+
+  // Brand briefs
+  Stream<BrandBrief?> getBrandBriefStream(String planId) {
+    return _firestore
+        .collection('brand_briefs')
+        .doc(planId)
+        .snapshots()
+        .map((doc) => doc.exists ? BrandBrief.fromFirestore(doc) : null);
+  }
+
+  Stream<List<BrandBrief>> getAllBrandBriefsStream() {
+    return _firestore.collection('brand_briefs').snapshots().map((snapshot) {
+      final briefs = snapshot.docs
+          .map((doc) => BrandBrief.fromFirestore(doc))
+          .toList();
+      briefs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return briefs;
+    });
+  }
+
+  Future<void> saveBrandBrief(BrandBrief brief) async {
+    await _firestore
+        .collection('brand_briefs')
+        .doc(brief.planId)
+        .set(brief.toFirestore(), SetOptions(merge: true));
+  }
+
+  Future<void> approveBrandBriefVersion(BrandBrief brief) async {
+    final batch = _firestore.batch();
+    final briefRef = _firestore.collection('brand_briefs').doc(brief.planId);
+    final versionRef = briefRef.collection('versions').doc();
+    batch.set(briefRef, brief.toFirestore(), SetOptions(merge: true));
+    batch.set(versionRef, {
+      ...brief.toFirestore(),
+      'versionId': versionRef.id,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
   }
 
   // Payments

@@ -1,7 +1,27 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/enums.dart';
 
-enum TaskStatus { draft, inProgress, awaitingConfirmation, completed }
+enum TaskStatus { notAssigned, assigned, started, draftCycle, completed }
+
+enum DraftCycleStage { instructions, working, confirmation }
+
+const adminPanelLabels = <String, String>{
+  'leads': 'Leads',
+  'clients': 'Clients',
+  'plans': 'Plans',
+  'payments': 'Payments',
+  'tasks': 'Tasks',
+  'salesTasks': 'Sales Tasks',
+  'myDashboard': 'My Dashboard',
+  'myTasks': 'My Tasks',
+  'briefs': 'Website Briefs',
+  'users': 'Staff management',
+  'chat': 'Chat',
+  'performance': 'Performance tracking',
+  'myPerformance': 'My performance',
+};
+
+const defaultStaffPanels = <String>{};
 
 List<String> _normalizePlanFeatures(List<String> features) {
   final normalized = <String>[];
@@ -81,26 +101,43 @@ class AppUser {
   final String email;
   final String name;
   final bool isAdmin;
+  final bool isStaff;
   final String role;
+  final String team;
+  final List<String> panels;
 
   AppUser({
     required this.uid,
     required this.email,
     required this.name,
     required this.isAdmin,
+    this.isStaff = false,
     this.role = '',
+    this.team = '',
+    this.panels = const [],
   });
 
-  factory AppUser.fromFirestore(DocumentSnapshot doc) {
+  factory AppUser.fromFirestore(DocumentSnapshot doc, {bool? isAdminOverride}) {
     final data = doc.data() as Map<String, dynamic>;
     return AppUser(
       uid: doc.id,
       email: data['email'] ?? '',
       name: data['name'] ?? '',
-      isAdmin: data['isAdmin'] ?? false,
+      isAdmin: isAdminOverride ?? data['isAdmin'] ?? false,
+      isStaff:
+          data['isStaff'] == true ||
+          (data['panels'] as List<dynamic>? ?? const []).isNotEmpty,
       role: data['role'] ?? '',
+      team: data['team'] ?? '',
+      panels: (data['panels'] as List<dynamic>? ?? const [])
+          .map((panel) => panel.toString())
+          .where(adminPanelLabels.containsKey)
+          .toList(),
     );
   }
+
+  bool canAccessPanel(String panel) =>
+      isAdmin || (isStaff && panels.contains(panel));
 }
 
 // Client model
@@ -111,6 +148,7 @@ class Client {
   final String category;
   final String contactEmail;
   final String contactPhone;
+  final String? alternatePhone;
   final String? assignedManager;
   final ClientStage stage;
   final DateTime createdDate;
@@ -118,6 +156,15 @@ class Client {
   final String? notes;
   final DateTime? followUpAt;
   final String? followUpNotes;
+  final bool intentConfirmed;
+  final bool roleConfirmed;
+  final String? decisionMakerRole;
+  final String? packageTier;
+  final String? closedReason;
+  final String? closedSubReason;
+  final String? closedNote;
+  final DateTime? stageChangedAt;
+  final bool isArchived;
 
   Client({
     required this.id,
@@ -126,6 +173,7 @@ class Client {
     required this.category,
     required this.contactEmail,
     required this.contactPhone,
+    this.alternatePhone,
     this.assignedManager,
     required this.stage,
     required this.createdDate,
@@ -133,6 +181,15 @@ class Client {
     this.notes,
     this.followUpAt,
     this.followUpNotes,
+    this.intentConfirmed = false,
+    this.roleConfirmed = false,
+    this.decisionMakerRole,
+    this.packageTier,
+    this.closedReason,
+    this.closedSubReason,
+    this.closedNote,
+    this.stageChangedAt,
+    this.isArchived = false,
   });
 
   factory Client.fromFirestore(DocumentSnapshot doc) {
@@ -144,6 +201,7 @@ class Client {
       category: data['category'] ?? '',
       contactEmail: data['contactEmail'] ?? '',
       contactPhone: data['contactPhone'] ?? '',
+      alternatePhone: data['alternatePhone'],
       assignedManager: data['assignedManager'],
       stage: ClientStage.values.firstWhere(
         (s) => s.name == data['stage'],
@@ -158,6 +216,17 @@ class Client {
           ? (data['followUpAt'] as Timestamp).toDate()
           : null,
       followUpNotes: data['followUpNotes'],
+      intentConfirmed: data['intentConfirmed'] == true,
+      roleConfirmed: data['roleConfirmed'] == true,
+      decisionMakerRole: data['decisionMakerRole'],
+      packageTier: data['packageTier'],
+      closedReason: data['closedReason'],
+      closedSubReason: data['closedSubReason'],
+      closedNote: data['closedNote'],
+      stageChangedAt: data['stageChangedAt'] != null
+          ? (data['stageChangedAt'] as Timestamp).toDate()
+          : null,
+      isArchived: data['isArchived'] ?? false,
     );
   }
 
@@ -168,6 +237,7 @@ class Client {
       'category': category,
       'contactEmail': contactEmail,
       'contactPhone': contactPhone,
+      'alternatePhone': alternatePhone,
       'assignedManager': assignedManager,
       'stage': stage.name,
       'createdDate': Timestamp.fromDate(createdDate),
@@ -177,6 +247,17 @@ class Client {
       'notes': notes,
       'followUpAt': followUpAt != null ? Timestamp.fromDate(followUpAt!) : null,
       'followUpNotes': followUpNotes,
+      'intentConfirmed': intentConfirmed,
+      'roleConfirmed': roleConfirmed,
+      'decisionMakerRole': decisionMakerRole,
+      'packageTier': packageTier,
+      'closedReason': closedReason,
+      'closedSubReason': closedSubReason,
+      'closedNote': closedNote,
+      'stageChangedAt': stageChangedAt != null
+          ? Timestamp.fromDate(stageChangedAt!)
+          : null,
+      'isArchived': isArchived,
     };
   }
 
@@ -188,6 +269,8 @@ class Client {
     String? category,
     String? contactEmail,
     String? contactPhone,
+    String? alternatePhone,
+    bool clearAlternatePhone = false,
     String? assignedManager,
     ClientStage? stage,
     DateTime? createdDate,
@@ -196,6 +279,16 @@ class Client {
     DateTime? followUpAt,
     String? followUpNotes,
     bool clearFollowUp = false,
+    bool? intentConfirmed,
+    bool? roleConfirmed,
+    String? decisionMakerRole,
+    String? packageTier,
+    String? closedReason,
+    String? closedSubReason,
+    String? closedNote,
+    bool clearClosedDetails = false,
+    DateTime? stageChangedAt,
+    bool? isArchived,
   }) {
     return Client(
       id: id ?? this.id,
@@ -204,6 +297,9 @@ class Client {
       category: category ?? this.category,
       contactEmail: contactEmail ?? this.contactEmail,
       contactPhone: contactPhone ?? this.contactPhone,
+      alternatePhone: clearAlternatePhone
+          ? alternatePhone
+          : alternatePhone ?? this.alternatePhone,
       assignedManager: assignedManager ?? this.assignedManager,
       stage: stage ?? this.stage,
       createdDate: createdDate ?? this.createdDate,
@@ -213,8 +309,146 @@ class Client {
       followUpNotes: clearFollowUp
           ? followUpNotes
           : followUpNotes ?? this.followUpNotes,
+      intentConfirmed: intentConfirmed ?? this.intentConfirmed,
+      roleConfirmed: roleConfirmed ?? this.roleConfirmed,
+      decisionMakerRole: decisionMakerRole ?? this.decisionMakerRole,
+      packageTier: packageTier ?? this.packageTier,
+      closedReason: clearClosedDetails
+          ? closedReason
+          : closedReason ?? this.closedReason,
+      closedSubReason: clearClosedDetails
+          ? closedSubReason
+          : closedSubReason ?? this.closedSubReason,
+      closedNote: clearClosedDetails
+          ? closedNote
+          : closedNote ?? this.closedNote,
+      stageChangedAt: stageChangedAt ?? this.stageChangedAt,
+      isArchived: isArchived ?? this.isArchived,
     );
   }
+}
+
+enum SalesTaskStatus {
+  notStarted,
+  inProgress,
+  waitingClient,
+  completed,
+  cancelled,
+}
+
+extension SalesTaskStatusLabel on SalesTaskStatus {
+  String get label => switch (this) {
+    SalesTaskStatus.notStarted => 'To do',
+    SalesTaskStatus.inProgress => 'In progress',
+    SalesTaskStatus.waitingClient => 'Waiting on client',
+    SalesTaskStatus.completed => 'Completed',
+    SalesTaskStatus.cancelled => 'Cancelled',
+  };
+}
+
+class SalesTask {
+  final String id;
+  final String clientId;
+  final String title;
+  final String category;
+  final String priority;
+  final SalesTaskStatus status;
+  final String notes;
+  final String outcome;
+  final bool isArchived;
+  final DateTime? dueAt;
+  final DateTime? completedAt;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  const SalesTask({
+    required this.id,
+    required this.clientId,
+    required this.title,
+    required this.category,
+    this.priority = 'normal',
+    this.status = SalesTaskStatus.notStarted,
+    this.notes = '',
+    this.outcome = '',
+    this.isArchived = false,
+    this.dueAt,
+    this.completedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory SalesTask.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return SalesTask(
+      id: doc.id,
+      clientId: data['clientId']?.toString() ?? '',
+      title: data['title']?.toString() ?? '',
+      category: data['category']?.toString() ?? '',
+      priority: data['priority']?.toString() ?? 'normal',
+      status: SalesTaskStatus.values.firstWhere(
+        (value) => value.name == data['status'],
+        orElse: () => SalesTaskStatus.notStarted,
+      ),
+      notes: data['notes']?.toString() ?? '',
+      outcome: data['outcome']?.toString() ?? '',
+      isArchived: data['isArchived'] == true,
+      dueAt: data['dueAt'] == null
+          ? null
+          : (data['dueAt'] as Timestamp).toDate(),
+      completedAt: data['completedAt'] == null
+          ? null
+          : (data['completedAt'] as Timestamp).toDate(),
+      createdAt: (data['createdAt'] as Timestamp).toDate(),
+      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() => {
+    'clientId': clientId,
+    'title': title,
+    'category': category,
+    'priority': priority,
+    'status': status.name,
+    'notes': notes,
+    'outcome': outcome,
+    'isArchived': isArchived,
+    'dueAt': dueAt == null ? null : Timestamp.fromDate(dueAt!),
+    'completedAt': completedAt == null
+        ? null
+        : Timestamp.fromDate(completedAt!),
+    'createdAt': Timestamp.fromDate(createdAt),
+    'updatedAt': Timestamp.fromDate(updatedAt),
+  };
+
+  SalesTask copyWith({
+    String? clientId,
+    String? title,
+    String? category,
+    String? priority,
+    SalesTaskStatus? status,
+    String? notes,
+    String? outcome,
+    bool? isArchived,
+    DateTime? dueAt,
+    bool clearDueAt = false,
+    DateTime? completedAt,
+    bool clearCompletedAt = false,
+    DateTime? updatedAt,
+  }) => SalesTask(
+    id: id,
+    clientId: clientId ?? this.clientId,
+    title: title ?? this.title,
+    category: category ?? this.category,
+    priority: priority ?? this.priority,
+    status: status ?? this.status,
+    notes: notes ?? this.notes,
+    outcome: outcome ?? this.outcome,
+    isArchived: isArchived ?? this.isArchived,
+    dueAt: clearDueAt ? null : dueAt ?? this.dueAt,
+    completedAt: clearCompletedAt ? null : completedAt ?? this.completedAt,
+    createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 }
 
 // Baseline model
@@ -258,6 +492,152 @@ class Baseline {
   }
 }
 
+enum ClientTaskSource { template, customIncluded, customBillable }
+
+({String category, String title}) _splitTaskFeature(String feature) {
+  final separatorIndex = feature.indexOf(': ');
+  return separatorIndex > 0
+      ? (
+          category: feature.substring(0, separatorIndex),
+          title: feature.substring(separatorIndex + 2),
+        )
+      : (category: '', title: feature);
+}
+
+String encodePlanTaskFeature(String category, String title) =>
+    category.trim().isEmpty
+    ? title.trim()
+    : '${category.trim()}: ${title.trim()}';
+
+extension ClientTaskSourceLabel on ClientTaskSource {
+  String get label => switch (this) {
+    ClientTaskSource.template => 'Standard',
+    ClientTaskSource.customIncluded => 'Added - Included',
+    ClientTaskSource.customBillable => 'Added - Billable',
+  };
+}
+
+class TemplateTask {
+  final String id;
+  final String category;
+  final String title;
+  final String defaultInstructions;
+  final int order;
+
+  const TemplateTask({
+    required this.id,
+    required this.category,
+    required this.title,
+    this.defaultInstructions = '',
+    required this.order,
+  });
+
+  factory TemplateTask.fromFirestore(Map<String, dynamic> data) => TemplateTask(
+    id: data['id']?.toString() ?? '',
+    category: data['category']?.toString() ?? '',
+    title: data['title']?.toString() ?? '',
+    defaultInstructions: data['defaultInstructions']?.toString() ?? '',
+    order: (data['order'] as num?)?.toInt() ?? 0,
+  );
+
+  Map<String, dynamic> toFirestore() => {
+    'id': id,
+    'category': category,
+    'title': title,
+    'defaultInstructions': defaultInstructions,
+    'order': order,
+  };
+}
+
+class ClientTask {
+  final String id;
+  final String category;
+  final String title;
+  final String instructions;
+  final int order;
+  final ClientTaskSource source;
+  final String? templateTaskId;
+  final String? addedReason;
+
+  const ClientTask({
+    required this.id,
+    required this.category,
+    required this.title,
+    this.instructions = '',
+    required this.order,
+    required this.source,
+    this.templateTaskId,
+    this.addedReason,
+  });
+
+  factory ClientTask.fromTemplate(TemplateTask task) => ClientTask(
+    id: task.id,
+    category: task.category,
+    title: task.title,
+    instructions: task.defaultInstructions,
+    order: task.order,
+    source: ClientTaskSource.template,
+    templateTaskId: task.id,
+  );
+
+  factory ClientTask.fromFirestore(Map<String, dynamic> data) {
+    final source = ClientTaskSource.values.firstWhere(
+      (value) => value.name == data['source'],
+      orElse: () => ClientTaskSource.template,
+    );
+    return ClientTask(
+      id: data['id']?.toString() ?? '',
+      category: data['category']?.toString() ?? '',
+      title: data['title']?.toString() ?? '',
+      instructions: data['instructions']?.toString() ?? '',
+      order: (data['order'] as num?)?.toInt() ?? 0,
+      source: source,
+      templateTaskId: data['templateTaskId']?.toString(),
+      addedReason: data['addedReason']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() => {
+    'id': id,
+    'category': category,
+    'title': title,
+    'instructions': instructions,
+    'order': order,
+    'source': source.name,
+    'templateTaskId': templateTaskId,
+    'addedReason': addedReason,
+  };
+
+  String get feature => encodePlanTaskFeature(category, title);
+}
+
+List<TemplateTask> _legacyTemplateTasks(List<String> features) => [
+  for (var index = 0; index < features.length; index++)
+    TemplateTask(
+      id: 'legacy-$index',
+      category: _splitTaskFeature(features[index]).category,
+      title: _splitTaskFeature(features[index]).title,
+      order: index,
+    ),
+];
+
+List<ClientTask> _legacyClientTasks(
+  List<String> features,
+  String? templateId,
+) => [
+  for (var index = 0; index < features.length; index++)
+    ClientTask(
+      id: 'legacy-$index',
+      category: _splitTaskFeature(features[index]).category,
+      title: _splitTaskFeature(features[index]).title,
+      order: index,
+      source: templateId == null
+          ? ClientTaskSource.customIncluded
+          : ClientTaskSource.template,
+      templateTaskId: templateId == null ? null : 'legacy-$index',
+    ),
+];
+
 // Reusable pricing plan template (managed centrally, applied to any client)
 class PlanTemplate {
   final String id;
@@ -265,6 +645,7 @@ class PlanTemplate {
   final String name;
   final double price;
   final List<String> features;
+  final List<TemplateTask> tasks;
   final DateTime createdDate;
 
   PlanTemplate({
@@ -273,8 +654,9 @@ class PlanTemplate {
     required this.name,
     required this.price,
     required this.features,
+    List<TemplateTask>? tasks,
     required this.createdDate,
-  });
+  }) : tasks = tasks ?? _legacyTemplateTasks(features);
 
   factory PlanTemplate.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -292,6 +674,16 @@ class PlanTemplate {
         data['name'] ?? '',
         type,
       ),
+      tasks: data['tasks'] == null
+          ? null
+          : (data['tasks'] as List<dynamic>)
+                .whereType<Map>()
+                .map(
+                  (task) => TemplateTask.fromFirestore(
+                    Map<String, dynamic>.from(task),
+                  ),
+                )
+                .toList(),
       createdDate: data['createdDate'] != null
           ? (data['createdDate'] as Timestamp).toDate()
           : DateTime.now(),
@@ -304,6 +696,7 @@ class PlanTemplate {
       'name': name,
       'price': price,
       'features': features,
+      'tasks': tasks.map((task) => task.toFirestore()).toList(),
       'createdDate': Timestamp.fromDate(createdDate),
     };
   }
@@ -314,6 +707,7 @@ class PlanTemplate {
     String? name,
     double? price,
     List<String>? features,
+    List<TemplateTask>? tasks,
     DateTime? createdDate,
   }) {
     return PlanTemplate(
@@ -322,6 +716,7 @@ class PlanTemplate {
       name: name ?? this.name,
       price: price ?? this.price,
       features: features ?? this.features,
+      tasks: tasks ?? this.tasks,
       createdDate: createdDate ?? this.createdDate,
     );
   }
@@ -436,6 +831,7 @@ class Plan {
   final String name;
   final double price;
   final List<String> features;
+  final List<ClientTask> tasks;
   final List<String> completedFeatures;
   final Map<String, int> featureProgress;
   final Map<String, Map<String, dynamic>> taskWorkflow;
@@ -450,12 +846,55 @@ class Plan {
     required this.name,
     required this.price,
     required this.features,
+    List<ClientTask>? tasks,
     this.completedFeatures = const [],
     this.featureProgress = const {},
     this.taskWorkflow = const {},
     required this.startDate,
     this.endDate,
-  });
+  }) : tasks = tasks ?? _legacyClientTasks(features, templateId);
+
+  ClientTask? taskForFeature(String feature) {
+    final parsed = _splitTaskFeature(feature);
+    for (final task in tasks) {
+      if (task.category == parsed.category && task.title == parsed.title) {
+        return task;
+      }
+    }
+    return null;
+  }
+
+  Plan withTemplateTasks(PlanTemplate template) {
+    final copiedTasks = template.tasks.map(ClientTask.fromTemplate).toList();
+    return copyWith(
+      templateId: template.id,
+      name: template.name,
+      price: template.price,
+      type: template.type,
+      features: copiedTasks.map((task) => task.feature).toList(),
+      tasks: copiedTasks,
+    );
+  }
+
+  Plan mergeTemplateTasks(PlanTemplate template) {
+    final existingTitles = tasks
+        .map((task) => task.title.trim().toLowerCase())
+        .toSet();
+    final additions = template.tasks
+        .where(
+          (task) => !existingTitles.contains(task.title.trim().toLowerCase()),
+        )
+        .map(ClientTask.fromTemplate);
+    final mergedTasks = [...tasks, ...additions];
+    return copyWith(
+      templateId: template.id,
+      name: template.name,
+      price: template.price,
+      type: template.type,
+      features: mergedTasks.map((task) => task.feature).toList(),
+      tasks: mergedTasks,
+    );
+  }
 
   /// Progress as a 0.0–1.0 fraction of features marked complete.
   double get progress {
@@ -484,6 +923,15 @@ class Plan {
         data['name'] ?? '',
         type,
       ),
+      tasks: data['tasks'] == null
+          ? null
+          : (data['tasks'] as List<dynamic>)
+                .whereType<Map>()
+                .map(
+                  (task) =>
+                      ClientTask.fromFirestore(Map<String, dynamic>.from(task)),
+                )
+                .toList(),
       completedFeatures: List<String>.from(data['completedFeatures'] ?? []),
       featureProgress: (data['featureProgress'] as Map<String, dynamic>? ?? {})
           .map((key, value) => MapEntry(key, value as int)),
@@ -505,6 +953,7 @@ class Plan {
       'name': name,
       'price': price,
       'features': features,
+      'tasks': tasks.map((task) => task.toFirestore()).toList(),
       'completedFeatures': completedFeatures,
       'featureProgress': featureProgress,
       'taskWorkflow': taskWorkflow,
@@ -521,6 +970,7 @@ class Plan {
     String? name,
     double? price,
     List<String>? features,
+    List<ClientTask>? tasks,
     List<String>? completedFeatures,
     Map<String, int>? featureProgress,
     Map<String, Map<String, dynamic>>? taskWorkflow,
@@ -536,6 +986,7 @@ class Plan {
       name: name ?? this.name,
       price: price ?? this.price,
       features: features ?? this.features,
+      tasks: tasks ?? this.tasks,
       completedFeatures: completedFeatures ?? this.completedFeatures,
       featureProgress: featureProgress ?? this.featureProgress,
       taskWorkflow: taskWorkflow ?? this.taskWorkflow,

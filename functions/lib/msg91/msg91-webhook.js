@@ -42,6 +42,7 @@ const https_1 = require("firebase-functions/v2/https");
 const logger = __importStar(require("firebase-functions/logger"));
 const config_1 = require("../config");
 const msg91_whatsapp_1 = require("./msg91-whatsapp");
+const lead_qualification_1 = require("../lead-qualification");
 const ZW_START = "\u2063";
 const ZW_END = "\u2064";
 const ZW_ZERO = "\u200B";
@@ -202,10 +203,19 @@ async function handleWhatsAppWebhook(body) {
     const convRef = await findOrCreateConversation(clientId, phone, parsed.contactName ?? phone, "whatsapp");
     const { cleanText, tracking: directTracking, clickRef } = extractTrackingInfo(parsed.body);
     const tracking = directTracking ?? (clickRef ? await resolveTrackingByClickRef(clientId, clickRef) : null);
-    // Store inbound message
-    await config_1.db
-        .collection(`${config_1.Collections.clients}/${clientId}/${config_1.Collections.conversations}/${convRef.id}/${config_1.Collections.messages}`)
-        .add({
+    const eventAt = parseMessageTimestamp(parsed.timestamp);
+    const whatsappMessageId = typeof body.uuid === "string" ? body.uuid : null;
+    const messagesRef = config_1.db.collection(`${config_1.Collections.clients}/${clientId}/${config_1.Collections.conversations}/${convRef.id}/${config_1.Collections.messages}`);
+    // MSG91 retries a webhook until it receives a response. Its UUID makes those retries idempotent.
+    if (whatsappMessageId) {
+        const existingMessage = await messagesRef.doc(whatsappMessageId).get();
+        if (existingMessage.exists) {
+            logger.info(`Ignoring duplicate MSG91 webhook ${whatsappMessageId}`);
+            return;
+        }
+    }
+    // Store inbound message before processing any automation.
+    await (whatsappMessageId ? messagesRef.doc(whatsappMessageId) : messagesRef.doc()).create({
         conversationId: convRef.id,
         contactId: convRef.contactId,
         direction: "inbound",
@@ -216,8 +226,9 @@ async function handleWhatsAppWebhook(body) {
         status: "delivered",
         senderName: parsed.contactName ?? phone,
         createdAt: new Date(),
+        eventAt,
         channel: "whatsapp",
-        whatsappMessageId: body.uuid || null,
+        whatsappMessageId,
     });
     // Update conversation's last message
     await config_1.db
@@ -227,6 +238,16 @@ async function handleWhatsAppWebhook(body) {
         lastMessageAt: new Date(),
         unreadCount: (convRef.unreadCount ?? 0) + 1,
     });
+    const clientRef = config_1.db.collection(config_1.Collections.clients).doc(clientId);
+    const clientSnapshot = await clientRef.get();
+    if (["reach", "click"].includes(String(clientSnapshot.data()?.stage))) {
+        await clientRef.update({
+            stage: "register",
+            stageChangedAt: new Date(),
+            followUpAt: new Date(),
+            followUpNotes: "Reply received; call now or schedule next call",
+        });
+    }
     if (tracking) {
         await upsertLeadFromTracking({
             clientId,
@@ -237,8 +258,17 @@ async function handleWhatsAppWebhook(body) {
             message: cleanText,
         });
     }
+    const qualificationHandled = await (0, lead_qualification_1.processQualificationInbound)({
+        clientId,
+        contactId: convRef.contactId,
+        conversationId: convRef.id,
+        phone,
+        contactName: parsed.contactName ?? phone,
+        content: cleanText,
+        isNewContact: convRef.isNewContact,
+    });
     // Check auto-reply rules
-    if (cleanText) {
+    if (cleanText && !qualificationHandled) {
         try {
             const { checkAutoReply } = await Promise.resolve().then(() => __importStar(require("../auto-replies")));
             const reply = await checkAutoReply(clientId, cleanText, "whatsapp");
@@ -261,6 +291,17 @@ async function handleWhatsAppWebhook(body) {
             logger.warn("[webhook] Auto-reply check failed:", err);
         }
     }
+}
+function parseMessageTimestamp(timestamp) {
+    const value = timestamp?.trim();
+    if (!value)
+        return new Date();
+    if (/^\d{10}$/.test(value))
+        return new Date(Number(value) * 1000);
+    if (/^\d{13}$/.test(value))
+        return new Date(Number(value));
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 async function upsertLeadFromTracking(opts) {
     const { clientId, contactId, contactName, phone, tracking, message } = opts;
@@ -404,6 +445,7 @@ async function handleDeliveryReport(body) {
         expired: "failed",
     };
     const mappedStatus = statusMap[newStatus.toLowerCase()] ?? newStatus;
+    const failureReason = typeof body.reason === "string" ? body.reason.trim() : "";
     logger.info(`handleDeliveryReport: msg91Id=${messageId}, status=${newStatus} → ${mappedStatus}`);
     const integratedNumber = body.integratedNumber ??
         body.integrated_number;
@@ -434,6 +476,7 @@ async function handleDeliveryReport(body) {
     await queueDoc.ref.update({
         status: mappedStatus,
         [`${mappedStatus}At`]: new Date(),
+        ...(mappedStatus === "failed" && failureReason ? { lastError: failureReason } : {}),
     });
     // SMS fallback: if WhatsApp delivery permanently failed, try SMS
     const clientId = queueDoc.ref.parent.parent?.id;
@@ -483,10 +526,14 @@ async function handleDeliveryReport(body) {
     const statusOrder = {
         queued: 0, sent: 1, delivered: 2, read: 3, failed: -1,
     };
-    if ((statusOrder[mappedStatus] ?? 0) > (statusOrder[currentStatus] ?? 0)) {
+    if (mappedStatus === "failed" ||
+        (statusOrder[mappedStatus] ?? 0) > (statusOrder[currentStatus] ?? 0)) {
         await msgDocRef.update({
             status: mappedStatus,
             ...(mappedStatus === "read" ? { readAt: new Date() } : {}),
+            ...(mappedStatus === "failed" && failureReason
+                ? { failureReason }
+                : {}),
         });
         logger.info(`Updated message ${msgDocRef.id} status: ${currentStatus} → ${mappedStatus}`);
     }
@@ -499,6 +546,19 @@ async function findClientByPhone(phone) {
     const normalized = phone.replace(/[\s+\-()]/g, "");
     // Also try without country code (last 10 digits)
     const short = normalized.length > 10 ? normalized.slice(-10) : normalized;
+    // Leads in this app are stored directly in the clients collection. Resolve
+    // those fields first so inbound webhooks do not scan every contact subtree.
+    for (const field of ["contactPhone", "alternatePhone"]) {
+        for (const candidate of new Set([normalized, short])) {
+            const clientSnap = await config_1.db
+                .collection(config_1.Collections.clients)
+                .where(field, "==", candidate)
+                .limit(1)
+                .get();
+            if (!clientSnap.empty)
+                return clientSnap.docs[0].id;
+        }
+    }
     // Search within each client's contacts collection (avoids collectionGroup index)
     const clientsSnap = await config_1.db.collection(config_1.Collections.clients).get();
     for (const clientDoc of clientsSnap.docs) {
@@ -571,6 +631,7 @@ async function findOrCreateConversation(clientId, phone, contactName, channel) {
             id: doc.id,
             contactId: doc.data().contactId ?? "",
             unreadCount: doc.data().unreadCount ?? 0,
+            isNewContact: false,
         };
     }
     // Find contact ID — try full number, then short (10-digit)
@@ -587,6 +648,7 @@ async function findOrCreateConversation(clientId, phone, contactName, channel) {
             .get();
     }
     let contactId;
+    let isNewContact = false;
     if (!contactSnap.empty) {
         contactId = contactSnap.docs[0].id;
     }
@@ -601,6 +663,7 @@ async function findOrCreateConversation(clientId, phone, contactName, channel) {
             createdAt: new Date(),
         });
         contactId = newContact.id;
+        isNewContact = true;
     }
     // Create new conversation
     const newConvRef = await convsCol.add({
@@ -614,7 +677,7 @@ async function findOrCreateConversation(clientId, phone, contactName, channel) {
         isActive: true,
         createdAt: new Date(),
     });
-    return { id: newConvRef.id, contactId, unreadCount: 0 };
+    return { id: newConvRef.id, contactId, unreadCount: 0, isNewContact };
 }
 /**
  * Trigger SMS fallback for a failed WhatsApp message.

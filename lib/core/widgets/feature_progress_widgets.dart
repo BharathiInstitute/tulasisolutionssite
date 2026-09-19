@@ -4,6 +4,45 @@ import 'package:flutter/material.dart';
 /// text" so they can be grouped under sub-headers when displayed. A feature
 /// with no "Category: " prefix falls under [defaultFeatureCategory].
 const String defaultFeatureCategory = 'General';
+const String visionAndPlanFeatureCategory = 'Vision & Plan & Goals & Promise';
+const String softwareFeatureCategory = 'Software';
+const String designFeatureCategory = 'Design, Brandkit & Posters';
+const String contentFeatureCategory = 'Content, Reels & Videos';
+const String distributionAndSupportFeatureCategory = 'Distribution & Support';
+
+const List<String> allPlanFeatureCategories = [
+  'Practice',
+  visionAndPlanFeatureCategory,
+  designFeatureCategory,
+  softwareFeatureCategory,
+  contentFeatureCategory,
+  distributionAndSupportFeatureCategory,
+];
+
+const List<String> setupPlanFeatureCategories = allPlanFeatureCategories;
+const List<String> subscriptionPlanFeatureCategories = allPlanFeatureCategories;
+const List<String> customTaskFeatureCategories = allPlanFeatureCategories;
+
+String displayFeatureCategory(String category) {
+  switch (category.trim().toLowerCase()) {
+    case 'foundation':
+    case 'vision & plan':
+    case 'goals':
+    case 'promise':
+      return visionAndPlanFeatureCategory;
+    case 'website & app':
+      return softwareFeatureCategory;
+    case 'design':
+      return designFeatureCategory;
+    case 'content':
+      return contentFeatureCategory;
+    case 'distribution':
+    case 'support':
+      return distributionAndSupportFeatureCategory;
+    default:
+      return category;
+  }
+}
 
 ({String category, String text}) parseFeature(String raw) {
   final separatorIndex = raw.indexOf(': ');
@@ -11,7 +50,7 @@ const String defaultFeatureCategory = 'General';
     return (category: defaultFeatureCategory, text: raw);
   }
   return (
-    category: raw.substring(0, separatorIndex),
+    category: displayFeatureCategory(raw.substring(0, separatorIndex)),
     text: raw.substring(separatorIndex + 2),
   );
 }
@@ -24,8 +63,14 @@ String encodeFeature(String category, String text) {
   return '$trimmedCategory: ${text.trim()}';
 }
 
-Map<String, List<String>> groupFeaturesByCategory(List<String> features) {
+Map<String, List<String>> groupFeaturesByCategory(
+  List<String> features, {
+  List<String> categoryOrder = const [],
+}) {
   final grouped = <String, List<String>>{};
+  for (final category in categoryOrder) {
+    grouped[category] = [];
+  }
   for (final raw in features) {
     final parsed = parseFeature(raw);
     grouped.putIfAbsent(parsed.category, () => []).add(parsed.text);
@@ -36,8 +81,14 @@ Map<String, List<String>> groupFeaturesByCategory(List<String> features) {
 /// Same grouping as [groupFeaturesByCategory] but keeps the raw
 /// "Category: text" string as the value so it can be used as a stable key
 /// for tracking completion (checkbox state) per feature.
-Map<String, List<String>> groupRawFeaturesByCategory(List<String> features) {
+Map<String, List<String>> groupRawFeaturesByCategory(
+  List<String> features, {
+  List<String> categoryOrder = const [],
+}) {
   final grouped = <String, List<String>>{};
+  for (final category in categoryOrder) {
+    grouped[category] = [];
+  }
   for (final raw in features) {
     final parsed = parseFeature(raw);
     grouped.putIfAbsent(parsed.category, () => []).add(raw);
@@ -49,12 +100,20 @@ Map<String, List<String>> groupRawFeaturesByCategory(List<String> features) {
 /// (read-only, no completion tracking) — used for Plan Templates.
 class GroupedFeatureList extends StatelessWidget {
   final List<String> features;
+  final List<String> categoryOrder;
 
-  const GroupedFeatureList({super.key, required this.features});
+  const GroupedFeatureList({
+    super.key,
+    required this.features,
+    this.categoryOrder = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
-    final grouped = groupFeaturesByCategory(features);
+    final grouped = groupFeaturesByCategory(
+      features,
+      categoryOrder: categoryOrder,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -72,15 +131,17 @@ class GroupedFeatureList extends StatelessWidget {
                 ),
               ),
               trailing: Text('${entry.value.length}'),
-              children: [
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: entry.value
-                      .map((f) => Chip(label: Text(f)))
-                      .toList(),
-                ),
-              ],
+              children: entry.value.isEmpty
+                  ? const []
+                  : [
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: entry.value
+                            .map((f) => Chip(label: Text(f)))
+                            .toList(),
+                      ),
+                    ],
             ),
           ),
       ],
@@ -99,6 +160,7 @@ class TrackableFeatureList extends StatelessWidget {
   final void Function(String rawFeature, bool done) onToggle;
   final void Function(String rawFeature, int percent)? onProgressChange;
   final Map<String, int>? featureProgress;
+  final List<String> categoryOrder;
 
   const TrackableFeatureList({
     super.key,
@@ -107,11 +169,15 @@ class TrackableFeatureList extends StatelessWidget {
     required this.onToggle,
     this.onProgressChange,
     this.featureProgress,
+    this.categoryOrder = const [],
   });
 
   @override
   Widget build(BuildContext context) {
-    final grouped = groupRawFeaturesByCategory(features);
+    final grouped = groupRawFeaturesByCategory(
+      features,
+      categoryOrder: categoryOrder,
+    );
     final completedSet = completedFeatures.toSet();
 
     return Column(
@@ -135,7 +201,7 @@ class TrackableFeatureList extends StatelessWidget {
                   title: Text(
                     entry.key,
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: done == total
+                      color: done == total && total > 0
                           ? Colors.green
                           : Theme.of(context).colorScheme.primary,
                       fontWeight: FontWeight.w700,

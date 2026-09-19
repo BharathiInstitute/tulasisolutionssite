@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tulasisolutionssite/core/constants/test_access.dart';
+import 'package:tulasisolutionssite/core/access/panel_access.dart';
 import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/theme/app_theme.dart';
@@ -14,7 +15,7 @@ const double kDesktopBreakpoint = 900;
 /// Scaffold wrapper that shows [AppDrawer] as a permanent side panel on
 /// wide (desktop/tablet) screens, and as a normal hamburger drawer on
 /// narrow (mobile) screens.
-class AppShell extends StatelessWidget {
+class AppShell extends ConsumerWidget {
   final bool isAdmin;
   final String currentRoute;
   final String title;
@@ -35,7 +36,21 @@ class AppShell extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (isAdmin) {
+      final profileAsync = ref.watch(currentUserProfileStreamProvider);
+      if (profileAsync.isLoading) {
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      }
+
+      final profile = profileAsync.valueOrNull;
+      final requiredPanel = panelForAdminRoute(currentRoute);
+      final isAllowed = profile?.isAdmin == true ||
+          (requiredPanel != null &&
+              canAccessAdminPanel(profile, requiredPanel));
+      if (!isAllowed) return const _PanelAccessRequired();
+    }
+
     final isDesktop = MediaQuery.of(context).size.width >= kDesktopBreakpoint;
 
     if (isDesktop) {
@@ -85,6 +100,23 @@ class AppShell extends StatelessWidget {
   }
 }
 
+class _PanelAccessRequired extends StatelessWidget {
+  const _PanelAccessRequired();
+
+  @override
+  Widget build(BuildContext context) => const Scaffold(
+    body: Center(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Text(
+          'Staff access required. Contact an administrator to request access.',
+          textAlign: TextAlign.center,
+        ),
+      ),
+    ),
+  );
+}
+
 class AppDrawer extends ConsumerWidget {
   final bool isAdmin;
   final String currentRoute;
@@ -105,6 +137,8 @@ class AppDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(firebaseAuthServiceProvider).getCurrentUser();
+    final profile = ref.watch(currentUserProfileStreamProvider).valueOrNull;
+    final hasPanelAccess = hasGrantedAdminPanel(profile);
     final title = isAdmin ? 'Admin Panel' : 'Client Portal';
     final email = user?.email ?? '';
     final clientId = GoRouter.of(context).state.pathParameters['clientId'];
@@ -167,84 +201,186 @@ class AppDrawer extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          if (isAdmin) ...[
-            _item(
-              context,
-              icon: Icons.people,
-              label: 'Leads',
-              route: '/admin/leads',
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(top: 8),
+              children: [
+                if (isAdmin && hasPanelAccess) ...[
+                  if (profile?.isAdmin ?? false)
+                    _item(
+                      context,
+                      icon: Icons.dashboard_outlined,
+                      label: 'Dashboard',
+                      route: '/admin/dashboard',
+                    ),
+                  if (canAccessAdminPanel(profile, 'tasks'))
+                    _item(
+                      context,
+                      icon: Icons.task_alt,
+                      label: 'Manage Tasks',
+                      route: '/admin/tasks',
+                    ),
+                  if (canAccessAdminPanel(profile, 'tasks'))
+                    _item(
+                      context,
+                      icon: Icons.summarize_outlined,
+                      label: 'Weekly Reports',
+                      route: '/admin/reports',
+                    ),
+                  if (canAccessAdminPanel(profile, 'salesTasks'))
+                    _item(
+                      context,
+                      icon: Icons.sell_outlined,
+                      label: 'Sales Tasks',
+                      route: '/admin/sales-tasks',
+                    ),
+                  if (canAccessAdminPanel(profile, 'chat'))
+                    _item(
+                      context,
+                      icon: Icons.chat,
+                      label: 'Chat',
+                      route: '/admin/chat',
+                    ),
+                  if (canAccessAdminPanel(profile, 'leads'))
+                    _item(
+                      context,
+                      icon: Icons.people,
+                      label: 'Leads',
+                      route: '/admin/leads',
+                    ),
+                  if (canAccessAdminPanel(profile, 'clients'))
+                    _item(
+                      context,
+                      icon: Icons.event,
+                      label: 'Clients',
+                      route: '/admin/consultations',
+                    ),
+                  if (canAccessAdminPanel(profile, 'plans'))
+                    _item(
+                      context,
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Plans',
+                      route: '/admin/plans',
+                    ),
+                  if (canAccessAdminPanel(profile, 'payments'))
+                    _item(
+                      context,
+                      icon: Icons.payments_outlined,
+                      label: 'Payments',
+                      route: '/admin/payments',
+                    ),
+                  if (canAccessAdminPanel(profile, 'users'))
+                    _item(
+                      context,
+                      icon: Icons.admin_panel_settings,
+                      label: 'Staff Management',
+                      route: '/admin/users',
+                    ),
+                  if (canAccessAdminPanel(profile, 'performance'))
+                    _item(
+                      context,
+                      icon: Icons.leaderboard_outlined,
+                      label: 'Performance',
+                      route: '/admin/performance',
+                    ),
+                    if (canAccessAdminPanel(profile, 'myDashboard') ||
+                      canAccessAdminPanel(profile, 'myTasks') ||
+                      canAccessAdminPanel(profile, 'briefs') ||
+                      canAccessAdminPanel(profile, 'myPerformance'))
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+                      child: Text(
+                        'Staff',
+                        style: TextStyle(
+                          color: AppTheme.mutedGrey,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  if (canAccessAdminPanel(profile, 'myDashboard'))
+                    _item(
+                      context,
+                      icon: Icons.person_outline,
+                      label: 'My Dashboard',
+                      route: '/admin/my-dashboard',
+                    ),
+                  if (canAccessAdminPanel(profile, 'myPerformance'))
+                    _item(
+                      context,
+                      icon: Icons.insights_outlined,
+                      label: 'My Performance',
+                      route: '/admin/my-performance',
+                    ),
+                  if (canAccessAdminPanel(profile, 'myTasks'))
+                    _item(
+                      context,
+                      icon: Icons.assignment_ind_outlined,
+                      label: 'My Tasks',
+                      route: '/admin/my-tasks',
+                    ),
+                  if (canAccessAdminPanel(profile, 'briefs'))
+                    _item(
+                      context,
+                      icon: Icons.description_outlined,
+                      label: 'Website Briefs',
+                      route: '/admin/website-briefs',
+                    ),
+                  if (canAccessAdminPanel(profile, 'briefs'))
+                    _item(
+                      context,
+                      icon: Icons.branding_watermark_outlined,
+                      label: 'Brand Briefs',
+                      route: '/admin/brand-briefs',
+                    ),
+                ] else ...[
+                  _item(
+                    context,
+                    icon: Icons.dashboard,
+                    label: 'Dashboard',
+                    route: '/client/dashboard',
+                  ),
+                  _item(
+                    context,
+                    icon: Icons.flag,
+                    label: 'My Goals',
+                    route: '/client/goals',
+                  ),
+                  _item(
+                    context,
+                    icon: Icons.task_alt,
+                    label: 'My Tasks',
+                    route: '/client/tasks',
+                  ),
+                  _item(
+                    context,
+                    icon: Icons.summarize_outlined,
+                    label: 'Weekly Reports',
+                    route: '/client/reports',
+                  ),
+                  _item(
+                    context,
+                    icon: Icons.description_outlined,
+                    label: 'Website Brief',
+                    route: '/client/website-brief',
+                  ),
+                  _item(
+                    context,
+                    icon: Icons.branding_watermark_outlined,
+                    label: 'Brand Brief',
+                    route: '/client/brand-brief',
+                  ),
+                ],
+                if (dualPanelTestEmails.contains(email.toLowerCase()))
+                  _item(
+                    context,
+                    icon: Icons.swap_horiz,
+                    label: isAdmin ? 'Client Panel' : 'Admin Panel',
+                    route: isAdmin ? '/client/dashboard' : '/admin/dashboard',
+                  ),
+              ],
             ),
-            _item(
-              context,
-              icon: Icons.event,
-              label: 'Clients',
-              route: '/admin/consultations',
-            ),
-            _item(
-              context,
-              icon: Icons.receipt_long_outlined,
-              label: 'Plans',
-              route: '/admin/plans',
-            ),
-            _item(
-              context,
-              icon: Icons.payments_outlined,
-              label: 'Payments',
-              route: '/admin/payments',
-            ),
-            _item(
-              context,
-              icon: Icons.task_alt,
-              label: 'Tasks',
-              route: '/admin/tasks',
-            ),
-            _item(
-              context,
-              icon: Icons.admin_panel_settings,
-              label: 'User Management',
-              route: '/admin/users',
-            ),
-            _item(
-              context,
-              icon: Icons.chat,
-              label: 'Chat',
-              route: '/admin/chat',
-            ),
-          ] else ...[
-            _item(
-              context,
-              icon: Icons.dashboard,
-              label: 'Dashboard',
-              route: '/client/dashboard',
-            ),
-            _item(
-              context,
-              icon: Icons.flag,
-              label: 'My Goals',
-              route: '/client/goals',
-            ),
-            _item(
-              context,
-              icon: Icons.task_alt,
-              label: 'My Tasks',
-              route: '/client/tasks',
-            ),
-          ],
-          if (dualPanelTestEmails.contains(email.toLowerCase()))
-            _item(
-              context,
-              icon: Icons.swap_horiz,
-              label: isAdmin ? 'Client Panel' : 'Admin Panel',
-              route: isAdmin ? '/client/dashboard' : '/admin/leads',
-            ),
-          _item(
-            context,
-            icon: Icons.manage_accounts,
-            label: 'Account details',
-            route: '/account-details',
           ),
-          const Spacer(),
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.logout),

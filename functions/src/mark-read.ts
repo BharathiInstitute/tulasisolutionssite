@@ -2,13 +2,39 @@
  * Mark Conversation Read — sends read receipts to WhatsApp for unread inbound messages.
  */
 
-import { onCall, CallableRequest } from "firebase-functions/v2/https";
+import { onCall, CallableRequest, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { db, Collections, clientCol, getCallerClient, callableOptions } from "./config";
 import { sendReadReceipt } from "./msg91/msg91-whatsapp";
 
 interface MarkReadRequest {
   conversationId: string;
+  clientId?: string;
+}
+
+async function resolveClientId(
+  request: CallableRequest<MarkReadRequest>,
+): Promise<string> {
+  const requestedClientId = request.data.clientId?.trim();
+  if (!requestedClientId) {
+    return (await getCallerClient(request.auth)).clientId;
+  }
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Authentication required");
+  }
+
+  const user = await db.collection("users").doc(request.auth.uid).get();
+  const userData = user.data();
+  const panels = Array.isArray(userData?.panels) ? userData.panels : [];
+  if (userData?.isAdmin === true || panels.includes("chat")) {
+    return requestedClientId;
+  }
+
+  const callerClientId = (await getCallerClient(request.auth)).clientId;
+  if (callerClientId !== requestedClientId) {
+    throw new HttpsError("permission-denied", "Cannot access this conversation");
+  }
+  return callerClientId;
 }
 
 /**
@@ -19,7 +45,7 @@ interface MarkReadRequest {
 export const markConversationRead = onCall(
   callableOptions,
   async (request: CallableRequest<MarkReadRequest>) => {
-    const { clientId } = await getCallerClient(request.auth);
+    const clientId = await resolveClientId(request);
     const { conversationId } = request.data;
 
     if (!conversationId) {
@@ -44,9 +70,7 @@ export const markConversationRead = onCall(
       // Find unread inbound messages with whatsappMessageId
       const messagesRef = db.collection(`${convPath}/${Collections.messages}`);
       const unreadSnap = await messagesRef
-        .where("direction", "==", "inbound")
         .where("status", "==", "delivered")
-        .where("whatsappMessageId", "!=", null)
         .limit(50)
         .get();
 
@@ -59,6 +83,7 @@ export const markConversationRead = onCall(
       let readCount = 0;
       for (const doc of unreadSnap.docs) {
         const data = doc.data();
+        if (data.direction !== "inbound") continue;
         const waMessageId = data.whatsappMessageId as string;
 
         let apiSuccess = false;

@@ -1,8 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/brand_brief.dart';
 import '../services/firebase_service.dart';
 import '../models/models.dart';
+import '../models/website_brief.dart';
+import '../models/weekly_report.dart';
 import '../chat/chat.dart';
+import '../performance/performance_models.dart';
 
 // Firebase service providers
 final firebaseAuthServiceProvider = Provider((ref) => FirebaseAuthService());
@@ -20,6 +24,20 @@ final currentUserIsAdminProvider = FutureProvider<bool>((ref) async {
   final user = authService.getCurrentUser();
   if (user == null) return false;
   return await authService.isUserAdmin(user.uid);
+});
+
+final currentUserProfileProvider = FutureProvider<AppUser?>((ref) async {
+  final authService = ref.watch(firebaseAuthServiceProvider);
+  final user = authService.getCurrentUser();
+  if (user == null) return null;
+  return authService.getUserProfile(user.uid);
+});
+
+final currentUserProfileStreamProvider = StreamProvider<AppUser?>((ref) {
+  final authService = ref.watch(firebaseAuthServiceProvider);
+  final user = authService.getCurrentUser();
+  if (user == null) return Stream.value(null);
+  return authService.getUserProfileStream(user.uid);
 });
 
 // Clients list provider
@@ -45,6 +63,11 @@ final currentClientProvider = FutureProvider<Client?>((ref) async {
       .watch(firestoreServiceProvider)
       .getClientByEmail(user!.email!.trim().toLowerCase());
 });
+
+final weeklyReportsProvider = StreamProvider.family<List<WeeklyReport>, String>(
+  (ref, clientId) =>
+      ref.watch(firestoreServiceProvider).getWeeklyReportsStream(clientId),
+);
 
 // Setup checklist items provider
 final checklistItemsProvider =
@@ -93,9 +116,58 @@ final allPlansStreamProvider = StreamProvider<List<Plan>>((ref) {
   return firestoreService.getAllPlansStream();
 });
 
+final salesTasksProvider = StreamProvider<List<SalesTask>>((ref) {
+  return ref.watch(firestoreServiceProvider).getSalesTasksStream();
+});
+
+final websiteBriefProvider = StreamProvider.family<WebsiteBrief?, String>((
+  ref,
+  planId,
+) {
+  return ref.watch(firestoreServiceProvider).getWebsiteBriefStream(planId);
+});
+
+final clientWebsiteBriefsProvider =
+    StreamProvider.family<List<WebsiteBrief>, String>((ref, clientId) {
+      return ref
+          .watch(firestoreServiceProvider)
+          .getClientWebsiteBriefsStream(clientId);
+    });
+
+final allWebsiteBriefsProvider = StreamProvider<List<WebsiteBrief>>((ref) {
+  return ref.watch(firestoreServiceProvider).getAllWebsiteBriefsStream();
+});
+
+final brandBriefProvider = StreamProvider.family<BrandBrief?, String>((
+  ref,
+  planId,
+) {
+  return ref.watch(firestoreServiceProvider).getBrandBriefStream(planId);
+});
+
+final allBrandBriefsProvider = StreamProvider<List<BrandBrief>>((ref) {
+  return ref.watch(firestoreServiceProvider).getAllBrandBriefsStream();
+});
+
 final paymentsProvider = StreamProvider<List<PaymentRecord>>((ref) {
   final firestoreService = ref.watch(firestoreServiceProvider);
   return firestoreService.getPaymentsStream();
+});
+
+final performanceSubmissionsProvider = StreamProvider<List<VideoSubmission>>((
+  ref,
+) {
+  return ref.watch(firestoreServiceProvider).getPerformanceSubmissionsStream();
+});
+
+final performanceHoursProvider = StreamProvider<List<DailyHours>>((ref) {
+  return ref.watch(firestoreServiceProvider).getPerformanceHoursStream();
+});
+
+final performanceAttendanceProvider = StreamProvider<List<AttendanceRecord>>((
+  ref,
+) {
+  return ref.watch(firestoreServiceProvider).getPerformanceAttendanceStream();
 });
 
 // Reusable pricing plan templates (admin managed)
@@ -149,10 +221,7 @@ final chatProvider = ChangeNotifierProvider<ChatProvider>((ref) {
     msg91Service: msg91Service,
   );
 
-  // Auto-load conversations if we have a valid client
-  if (clientId.isNotEmpty) {
-    provider.loadConversations();
-  }
+  provider.loadConversations();
 
   return provider;
 });

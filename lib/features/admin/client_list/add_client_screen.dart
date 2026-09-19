@@ -5,8 +5,7 @@ import 'package:tulasisolutionssite/core/constants/enums.dart';
 import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
 
-/// Shows a popup dialog to create a new client, optionally pre-selecting
-/// [initialStage] (e.g. when opened from the Setup or Subscription panel).
+/// Shows a popup dialog to create a new client in the current funnel flow.
 Future<void> showAddClientDialog(
   BuildContext context, {
   ClientStage? initialStage,
@@ -32,9 +31,11 @@ class _AddClientDialogState extends ConsumerState<AddClientDialog> {
   final _categoryController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _alternatePhoneController = TextEditingController();
   final _managerController = TextEditingController();
+  final _notesController = TextEditingController();
   final _followUpNotesController = TextEditingController();
-  late ClientStage _stage;
+  late final ClientStage _stage;
   DateTime? _followUpAt;
   bool _isLoading = false;
   String? _error;
@@ -42,7 +43,7 @@ class _AddClientDialogState extends ConsumerState<AddClientDialog> {
   @override
   void initState() {
     super.initState();
-    _stage = widget.initialStage ?? ClientStage.reach;
+    _stage = widget.initialStage ?? ClientStage.click;
   }
 
   @override
@@ -52,7 +53,9 @@ class _AddClientDialogState extends ConsumerState<AddClientDialog> {
     _categoryController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _alternatePhoneController.dispose();
     _managerController.dispose();
+    _notesController.dispose();
     _followUpNotesController.dispose();
     super.dispose();
   }
@@ -77,11 +80,15 @@ class _AddClientDialogState extends ConsumerState<AddClientDialog> {
         category: _categoryController.text.trim(),
         contactEmail: _emailController.text.trim().toLowerCase(),
         contactPhone: _phoneController.text.trim(),
+        alternatePhone: _alternatePhoneController.text.trim().isEmpty
+            ? null
+            : _alternatePhoneController.text.trim(),
         assignedManager: _managerController.text.trim().isEmpty
             ? null
             : _managerController.text.trim(),
         stage: _stage,
         createdDate: DateTime.now(),
+        notes: _notesController.text.trim(),
         followUpAt: _followUpAt,
         followUpNotes: _followUpNotesController.text.trim().isEmpty
             ? null
@@ -148,9 +155,25 @@ class _AddClientDialogState extends ConsumerState<AddClientDialog> {
               ),
               const SizedBox(height: 16),
               TextField(
+                controller: _alternatePhoneController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Alternate phone'),
+              ),
+              const SizedBox(height: 16),
+              TextField(
                 controller: _managerController,
                 decoration: const InputDecoration(
                   labelText: 'Assigned manager (optional)',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _notesController,
+                minLines: 3,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Notes',
+                  alignLabelWithHint: true,
                 ),
               ),
               const SizedBox(height: 16),
@@ -158,20 +181,6 @@ class _AddClientDialogState extends ConsumerState<AddClientDialog> {
                 followUpAt: _followUpAt,
                 notesController: _followUpNotesController,
                 onDateChanged: (date) => setState(() => _followUpAt = date),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<ClientStage>(
-                initialValue: _stage,
-                items: ClientStage.values
-                    .map(
-                      (stage) => DropdownMenuItem(
-                        value: stage,
-                        child: Text(stage.displayName),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) => setState(() => _stage = value ?? _stage),
-                decoration: const InputDecoration(labelText: 'Stage'),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 16),

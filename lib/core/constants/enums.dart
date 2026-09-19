@@ -1,18 +1,27 @@
 // Client lifecycle stages (marketing/growth funnel)
 enum ClientStage {
-  reach('Reach'),
-  click('Click'),
-  register('Register'),
-  consult('Consult'),
-  followUp('Follow Up'),
-  client('Sales'),
+  reach('Ready to Send'),
+  click('Message Sent'),
+  register('Call Pending'),
+  consult('Qualified / Follow-up'),
+  followUp('Follow Up (Legacy)'),
+  client('Won'),
   retain('Retain'),
   refer('Refer'),
-  lost('Lost');
+  lost('Closed');
 
   final String displayName;
   const ClientStage(this.displayName);
 }
+
+const chatFunnelStages = <ClientStage>[
+  ClientStage.reach,
+  ClientStage.click,
+  ClientStage.register,
+  ClientStage.consult,
+  ClientStage.client,
+  ClientStage.lost,
+];
 
 // Software delivery stages
 enum SoftwareStage {

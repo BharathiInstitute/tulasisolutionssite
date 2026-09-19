@@ -12,67 +12,292 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
 
+    function isStaff() {
+      return signedIn()
+        && (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isStaff == true
+              || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.panels.size() > 0))
+          || (request.auth.token.email != null
+            && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+            && (get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.isStaff == true
+              || get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.panels.size() > 0))
+        );
+    }
+
+    function hasPanel(panel) {
+      return isStaff() && (
+        (request.auth.token.email != null
+          && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+          && panel in get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.panels)
+        || (request.auth.token.email == null
+          || !exists(/databases/$(database)/documents/users/$(request.auth.token.email)))
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && panel in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.panels
+      );
+    }
+
     function isLinkedClient(clientId) {
       return signedIn()
         && exists(/databases/$(database)/documents/clients/$(clientId))
         && get(/databases/$(database)/documents/clients/$(clientId)).data.contactEmail == request.auth.token.email;
     }
 
+    function canManageBriefs() {
+      return isAdmin() || hasPanel('briefs');
+    }
+
+    function canManagePerformance() {
+      return isAdmin() || hasPanel('performance');
+    }
+
+    function canWorkOnTasks() {
+      return isAdmin() || hasPanel('tasks') || hasPanel('myTasks');
+    }
+
+    match /{path=**}/conversations/{conversationId} {
+      allow read: if isAdmin() || hasPanel('chat');
+    }
+
     match /users/{userId} {
       allow create: if signedIn() && (
         isAdmin()
-        || (request.auth.uid == userId && request.resource.data.isAdmin == false)
+        || (request.auth.uid == userId
+            && request.resource.data.isAdmin == false
+            && request.resource.data.panels.size() == 0)
       );
-      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow read: if signedIn() && (
+        request.auth.uid == userId
+        || request.auth.token.email == userId
+        || isAdmin()
+        || hasPanel('users')
+        || hasPanel('tasks')
+        || hasPanel('performance')
+      );
       allow update: if signedIn()
         && (
           isAdmin()
+          || hasPanel('users')
           || (request.auth.uid == userId
-              && request.resource.data.isAdmin == resource.data.isAdmin)
+              && request.resource.data.isAdmin == resource.data.isAdmin
+              && request.resource.data.panels == resource.data.panels)
         );
       allow delete: if isAdmin();
     }
 
     match /clients/{clientId} {
       allow read: if isAdmin()
+        || hasPanel('leads')
+        || hasPanel('clients')
+        || hasPanel('plans')
+        || hasPanel('tasks')
+        || hasPanel('myTasks')
+        || hasPanel('briefs')
         || (signedIn() && resource.data.contactEmail == request.auth.token.email);
-      allow write: if isAdmin();
+      allow write: if isAdmin() || hasPanel('leads') || hasPanel('clients');
 
       match /conversations/{conversationId} {
-        allow read, write: if isAdmin() || isLinkedClient(clientId);
+        allow read, write: if isAdmin() || hasPanel('chat') || isLinkedClient(clientId);
 
         match /messages/{messageId} {
-          allow read, write: if isAdmin() || isLinkedClient(clientId);
+          allow read, write: if isAdmin() || hasPanel('chat') || isLinkedClient(clientId);
         }
       }
 
       match /contacts/{contactId} {
-        allow read: if isAdmin() || isLinkedClient(clientId);
-        allow write: if isAdmin();
+        allow read: if isAdmin() || hasPanel('chat') || isLinkedClient(clientId);
+        allow write: if isAdmin() || hasPanel('chat');
       }
 
       match /{document=**} {
-        allow read: if isAdmin() || isLinkedClient(clientId);
-        allow write: if isAdmin();
+        allow read: if isAdmin() || hasPanel('clients') || isLinkedClient(clientId);
+        allow write: if isAdmin() || hasPanel('clients');
       }
     }
 
     match /consultations/{consultationId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || hasPanel('leads') || hasPanel('clients');
     }
 
     match /plans/{planId} {
       allow read: if isAdmin()
+        || hasPanel('plans')
+        || hasPanel('tasks')
+        || hasPanel('myTasks')
+        || hasPanel('briefs')
         || (signedIn() && resource.data.clientId != null && isLinkedClient(resource.data.clientId));
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin() || hasPanel('plans') || hasPanel('tasks');
+      allow update: if isAdmin()
+        || hasPanel('plans')
+        || hasPanel('tasks')
+        || (hasPanel('myTasks')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['taskWorkflow']))
+        || (signedIn()
+            && resource.data.clientId != null
+            && isLinkedClient(resource.data.clientId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['taskWorkflow']));
+    }
+
+    match /sales_tasks/{taskId} {
+      allow read, write: if isAdmin() || hasPanel('salesTasks');
+    }
+
+    match /weekly_reports/{reportId} {
+      allow read: if isAdmin() || hasPanel('tasks')
+        || (signedIn()
+            && resource.data.clientId != null
+            && isLinkedClient(resource.data.clientId));
+      allow create, update, delete: if isAdmin() || hasPanel('tasks');
     }
 
     match /plan_templates/{templateId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || hasPanel('plans');
+    }
+
+    match /website_briefs/{planId} {
+      allow read: if canManageBriefs()
+        || (signedIn()
+            && resource.data.clientId != null
+            && isLinkedClient(resource.data.clientId));
+
+      allow create: if canManageBriefs()
+        || (signedIn()
+            && request.resource.data.clientId != null
+            && isLinkedClient(request.resource.data.clientId)
+            && request.resource.data.planId == planId
+            && request.resource.data.status in ['clientDraft', 'submitted']
+            && request.resource.data.reviewNote == ''
+            && request.resource.data.requestedSections.size() == 0
+            && request.resource.data.approvedAt == null
+            && request.resource.data.approvedBy == null);
+
+      allow update: if canManageBriefs()
+        || (signedIn()
+            && resource.data.clientId != null
+            && isLinkedClient(resource.data.clientId)
+            && request.resource.data.clientId == resource.data.clientId
+            && request.resource.data.planId == resource.data.planId
+            && request.resource.data.planId == planId
+            && request.resource.data.planName == resource.data.planName
+            && request.resource.data.createdAt == resource.data.createdAt
+            && request.resource.data.reviewNote == resource.data.reviewNote
+            && request.resource.data.requestedSections == resource.data.requestedSections
+            && (
+              (resource.data.status == 'clientDraft'
+                && request.resource.data.status in ['clientDraft', 'submitted']
+                && request.resource.data.approvedAt == null
+                && request.resource.data.approvedBy == null)
+              || (resource.data.status == 'changesRequested'
+                && request.resource.data.status in ['changesRequested', 'submitted']
+                && request.resource.data.approvedAt == null
+                && request.resource.data.approvedBy == null)
+              || (resource.data.status == 'awaitingApproval'
+                && request.resource.data.status == 'approved'
+                && request.resource.data.sections == resource.data.sections
+                && request.resource.data.approvedAt != null
+                && request.resource.data.approvedBy == request.auth.uid)
+            ));
+
+      allow delete: if canManageBriefs();
+
+      match /versions/{versionId} {
+        allow read: if canManageBriefs()
+          || (signedIn()
+              && resource.data.clientId != null
+              && isLinkedClient(resource.data.clientId));
+        allow create: if canManageBriefs()
+          || (signedIn()
+              && request.resource.data.clientId != null
+              && isLinkedClient(request.resource.data.clientId)
+              && request.resource.data.planId == planId
+              && request.resource.data.status == 'approved'
+              && getAfter(/databases/$(database)/documents/website_briefs/$(planId)).data.status == 'approved'
+              && getAfter(/databases/$(database)/documents/website_briefs/$(planId)).data.clientId == request.resource.data.clientId);
+        allow update, delete: if false;
+      }
+    }
+
+    match /brand_briefs/{planId} {
+      allow read: if canManageBriefs()
+        || (signedIn()
+            && resource.data.clientId != null
+            && isLinkedClient(resource.data.clientId));
+
+      allow create: if canManageBriefs()
+        || (signedIn()
+            && request.resource.data.clientId != null
+            && isLinkedClient(request.resource.data.clientId)
+            && request.resource.data.planId == planId
+            && request.resource.data.status in ['clientDraft', 'submitted']
+            && request.resource.data.reviewNote == ''
+            && request.resource.data.requestedSections.size() == 0
+            && request.resource.data.approvedAt == null
+            && request.resource.data.approvedBy == null);
+
+      allow update: if canManageBriefs()
+        || (signedIn()
+            && resource.data.clientId != null
+            && isLinkedClient(resource.data.clientId)
+            && request.resource.data.clientId == resource.data.clientId
+            && request.resource.data.planId == resource.data.planId
+            && request.resource.data.planId == planId
+            && request.resource.data.planName == resource.data.planName
+            && request.resource.data.createdAt == resource.data.createdAt
+            && request.resource.data.reviewNote == resource.data.reviewNote
+            && request.resource.data.requestedSections == resource.data.requestedSections
+            && (
+              (resource.data.status == 'clientDraft'
+                && request.resource.data.status in ['clientDraft', 'submitted']
+                && request.resource.data.approvedAt == null
+                && request.resource.data.approvedBy == null)
+              || (resource.data.status == 'changesRequested'
+                && request.resource.data.status in ['changesRequested', 'submitted']
+                && request.resource.data.approvedAt == null
+                && request.resource.data.approvedBy == null)
+              || (resource.data.status == 'awaitingApproval'
+                && request.resource.data.status == 'approved'
+                && request.resource.data.sections == resource.data.sections
+                && request.resource.data.approvedAt != null
+                && request.resource.data.approvedBy == request.auth.uid)
+            ));
+
+      allow delete: if canManageBriefs();
+
+      match /versions/{versionId} {
+        allow read: if canManageBriefs()
+          || (signedIn()
+              && resource.data.clientId != null
+              && isLinkedClient(resource.data.clientId));
+        allow create: if canManageBriefs()
+          || (signedIn()
+              && request.resource.data.clientId != null
+              && isLinkedClient(request.resource.data.clientId)
+              && request.resource.data.planId == planId
+              && request.resource.data.status == 'approved'
+              && getAfter(/databases/$(database)/documents/brand_briefs/$(planId)).data.status == 'approved'
+              && getAfter(/databases/$(database)/documents/brand_briefs/$(planId)).data.clientId == request.resource.data.clientId);
+        allow update, delete: if false;
+      }
     }
 
     match /payments/{paymentId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || hasPanel('payments');
+    }
+
+    match /performance_submissions/{submissionId} {
+      allow read: if canManagePerformance() || resource.data.staffId == request.auth.uid;
+      allow create: if canManagePerformance();
+      allow update, delete: if canManagePerformance();
+    }
+
+    match /performance_hours/{recordId} {
+      allow read: if canManagePerformance() || resource.data.staffId == request.auth.uid;
+      allow write: if canManagePerformance();
+    }
+
+    match /performance_attendance/{recordId} {
+      allow read: if canManagePerformance() || resource.data.staffId == request.auth.uid;
+      allow write: if canManagePerformance();
     }
   }
 }

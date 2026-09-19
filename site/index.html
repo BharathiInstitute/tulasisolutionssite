@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=3" />
+  <link rel="stylesheet" href="styles.css?v=6" />
   <script>
     // Unregister old Flutter service worker that intercepts navigation
     if ('serviceWorker' in navigator) {
@@ -26,6 +26,7 @@
     <div class="container nav-inner">
       <a class="nav-logo" href="index.html" aria-label="Tulasi Solutions home">
         <img class="logo-image" src="assets/logo.png" alt="Tulasi Solutions" />
+        <span class="logo-wordmark">Tulasi Solutions</span>
       </a>
       <nav class="nav-links" aria-label="Main navigation">
         <a href="index.html" class="active">Home</a>
@@ -34,10 +35,11 @@
         <a href="pricing.html">Pricing</a>
         <a href="how-it-works.html">How It Works</a>
         <a href="proof.html">Proof</a>
-        <a class="nav-book" href="contact.html">Book Consultation</a>
+        <a class="nav-book" href="contact.html">Chat With Us</a>
       </nav>
       <div class="nav-cta">
-        <a class="btn btn-primary" href="app/" aria-label="Login to app">Login</a>
+        <a class="btn btn-primary nav-login" href="app/" aria-label="Login to app">Login</a>
+        <a class="btn btn-primary nav-consultation" href="contact.html"><span class="consultation-full">Chat With Us</span><span class="consultation-short">Chat</span></a>
       </div>
       <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">☰</button>
     </div>
@@ -49,13 +51,18 @@
       <div class="blob blob-1"></div>
       <div class="blob blob-2"></div>
       <div class="blob blob-3"></div>
-      <div class="container">
-        <h1>We Don't Just Build Your Business. We Grow It.</h1>
-        <p class="hero-sub">A growth-support partner for operating businesses in Hyderabad — setup, content, strategy, and staff training, all under one roof.</p>
-        <div class="hero-actions">
-          <a class="btn btn-primary" href="contact.html">Book Consultation</a>
-          <a class="btn btn-outline-light" href="pricing.html">See Pricing</a>
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <h1>We Don't Just Build Your Business. We Grow It.</h1>
+          <p class="hero-sub">Everything your business needs to grow: business setup, branding, website and software, marketing, customer distribution, staff training, and growth strategy &mdash; all under one roof.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="contact.html">Talk About Your Business</a>
+            <a class="btn btn-outline-light" href="pricing.html">See Pricing</a>
+          </div>
         </div>
+        <figure class="hero-pillars">
+          <img src="assets/business-pillars.svg" alt="Seven pillars under one roof: business setup, branding, website and software, marketing, customer distribution, staff training, and growth strategy." />
+        </figure>
       </div>
     </section>
 
@@ -68,14 +75,17 @@
         </div>
         <div class="grid grid-3">
           <div class="stat-card reveal">
+            <span class="visual-icon" aria-hidden="true">◎</span>
             <span class="stat-number">55–60%</span>
             <span class="stat-label">of registered MSMEs have moved online in some form</span>
           </div>
           <div class="stat-card reveal">
+            <span class="visual-icon" aria-hidden="true">₹</span>
             <span class="stat-number">3–7%</span>
             <span class="stat-label">of revenue is all most SMBs invest in digital tools</span>
           </div>
           <div class="stat-card reveal">
+            <span class="visual-icon" aria-hidden="true">!</span>
             <span class="stat-number">36%</span>
             <span class="stat-label">cite resistance to new technology as the #1 barrier — not cost</span>
           </div>
@@ -124,22 +134,22 @@
         </div>
         <div class="grid grid-2">
           <div class="card reveal">
-            <span class="badge badge-dark">1</span>
+            <span class="visual-icon" aria-hidden="true">+</span>
             <h3 style="margin-top: 14px;">Business Setup</h3>
             <p>Your site, app, or full operating system — built on the platform that fits how you work.</p>
           </div>
           <div class="card reveal">
-            <span class="badge badge-dark">2</span>
+            <span class="visual-icon" aria-hidden="true">▶</span>
             <h3 style="margin-top: 14px;">Content to Sales</h3>
             <p>Content that doesn't just get posted — it's distributed, tracked, and pushed toward an actual sale.</p>
           </div>
           <div class="card reveal">
-            <span class="badge badge-dark">3</span>
+            <span class="visual-icon" aria-hidden="true">↗</span>
             <h3 style="margin-top: 14px;">Growth &amp; Strategy Guidance</h3>
             <p>Direct, personal guidance from the founder on pricing, offers, and what to do next.</p>
           </div>
           <div class="card reveal">
-            <span class="badge badge-dark">4</span>
+            <span class="visual-icon" aria-hidden="true">✓</span>
             <h3 style="margin-top: 14px;">Staff Training</h3>
             <p>Your team trained to run the growth plan themselves.</p>
           </div>
@@ -157,9 +167,9 @@
             <p>Product business? Tulasi Stores. Restaurant or food business? Tulasi Hotels. Everything else — salons, clinics, consultants, services? Tulasi Services. Included as part of your plan.</p>
           </div>
           <div class="app-icon-row">
-            <div class="app-icon-card"><span class="app-emoji">🛍️</span>Stores</div>
-            <div class="app-icon-card"><span class="app-emoji">🍽️</span>Hotels</div>
-            <div class="app-icon-card"><span class="app-emoji">🧰</span>Services</div>
+            <div class="app-icon-card"><span class="app-symbol" aria-hidden="true">S</span>Stores</div>
+            <div class="app-icon-card"><span class="app-symbol" aria-hidden="true">H</span>Hotels</div>
+            <div class="app-icon-card"><span class="app-symbol" aria-hidden="true">B</span>Services</div>
           </div>
         </div>
         <div class="demo-visual reveal" aria-label="Tulasi app demo screenshots for stores, hotels, and services">
@@ -247,8 +257,8 @@
     <section class="section section-dark">
       <div class="container" style="text-align: center;">
         <h2 class="reveal">Let's Grow Your Business Together</h2>
-        <p class="reveal" style="max-width: 560px; margin: 0 auto 28px;">Start with a free growth class — no commitment, no pressure.</p>
-        <a class="btn btn-primary reveal" href="contact.html">Book Consultation</a>
+        <p class="reveal" style="max-width: 560px; margin: 0 auto 28px;">No pressure, no sales pitch &mdash; just a conversation about your business.</p>
+        <a class="btn btn-primary reveal" href="contact.html">Talk About Your Business</a>
       </div>
     </section>
   </main>
@@ -270,7 +280,7 @@
             <li><a href="about.html">About</a></li>
             <li><a href="services.html">Services</a></li>
             <li><a href="pricing.html">Pricing</a></li>
-            <li><a href="contact.html">Book Consultation</a></li>
+            <li><a href="contact.html">Chat With Us</a></li>
           </ul>
         </div>
         <div class="footer-col">
@@ -282,15 +292,6 @@
             <li>10 AM – 7 PM</li>
           </ul>
         </div>
-        <div class="footer-col">
-          <h4>Social</h4>
-          <div class="footer-social">
-            <a href="#" aria-label="Facebook">f</a>
-            <a href="#" aria-label="Instagram">ig</a>
-            <a href="#" aria-label="LinkedIn">in</a>
-            <a href="#" aria-label="YouTube">yt</a>
-          </div>
-        </div>
       </div>
       <div class="footer-bottom">
         <span>© Tulasi Solutions — Hyderabad, Telangana</span>
@@ -299,6 +300,6 @@
     </div>
   </footer>
 
-  <script src="script.js?v=3"></script>
+  <script src="script.js?v=6"></script>
 </body>
 </html>

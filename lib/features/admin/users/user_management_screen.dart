@@ -20,7 +20,7 @@ class UserManagementScreen extends ConsumerWidget {
     return AppShell(
       isAdmin: true,
       currentRoute: '/admin/users',
-      title: 'User Management',
+      title: 'Staff Management',
       floatingActionButton: FloatingActionButton(
         tooltip: 'Add staff',
         onPressed: () => _showAddStaffDialog(context, ref),
@@ -70,14 +70,45 @@ class UserManagementScreen extends ConsumerWidget {
                             ),
                           ),
                         ),
+                      if (user.team.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Branch / team: ${user.team}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      if (user.panels.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            user.panels
+                                .map(
+                                  (panel) => adminPanelLabels[panel] ?? panel,
+                                )
+                                .join(' • '),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
                     ],
                   ),
-                  trailing: Switch(
-                    value: user.isAdmin,
-                    onChanged: isSelf
-                        ? null
-                        : (value) =>
-                              _confirmAndToggle(context, ref, user, value),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Edit staff permissions',
+                        onPressed: () =>
+                            _showEditStaffDialog(context, ref, user),
+                        icon: const Icon(Icons.manage_accounts_outlined),
+                      ),
+                      Switch(
+                        value: user.isAdmin,
+                        onChanged: isSelf
+                            ? null
+                            : (value) =>
+                                  _confirmAndToggle(context, ref, user, value),
+                      ),
+                    ],
                   ),
                 ),
               );
@@ -92,69 +123,22 @@ class UserManagementScreen extends ConsumerWidget {
   }
 
   Future<void> _showAddStaffDialog(BuildContext context, WidgetRef ref) async {
-    final nameController = TextEditingController();
-    final emailController = TextEditingController();
-    final roleController = TextEditingController();
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Staff'),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: 'Name'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(labelText: 'Email'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: roleController,
-                decoration: const InputDecoration(labelText: 'Role'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => context.pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => context.pop(true),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
+    final details = await _showStaffDialog(
+      context,
+      teamOptions: _teamOptions(ref),
     );
-
-    if (confirmed != true) return;
-
-    final name = nameController.text.trim();
-    final email = emailController.text.trim();
-    final role = roleController.text.trim();
-
-    if (name.isEmpty || email.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Name and email are required')),
-        );
-      }
-      return;
-    }
+    if (details == null) return;
 
     try {
       await ref
           .read(firestoreServiceProvider)
-          .addStaffMember(name: name, email: email, role: role);
+          .addStaffMember(
+            name: details.name,
+            email: details.email,
+            role: details.role,
+            team: details.team,
+            panels: details.panels,
+          );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Staff added successfully')),
@@ -167,6 +151,217 @@ class UserManagementScreen extends ConsumerWidget {
         ).showSnackBar(SnackBar(content: Text('Error adding staff: $e')));
       }
     }
+  }
+
+  Future<void> _showEditStaffDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppUser user,
+  ) async {
+    final details = await _showStaffDialog(
+      context,
+      user: user,
+      teamOptions: _teamOptions(ref, currentTeam: user.team),
+    );
+    if (details == null) return;
+    try {
+      await ref
+          .read(firestoreServiceProvider)
+          .updateStaffMember(
+            uid: user.uid,
+            name: details.name,
+            role: details.role,
+            team: details.team,
+            panels: details.panels,
+          );
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating staff: $error')));
+      }
+    }
+  }
+
+  Future<_StaffDetails?> _showStaffDialog(
+    BuildContext context, {
+    AppUser? user,
+    required List<String> teamOptions,
+  }) async {
+    final nameController = TextEditingController(text: user?.name ?? '');
+    final emailController = TextEditingController(text: user?.email ?? '');
+    final roleController = TextEditingController(text: user?.role ?? '');
+    final panels = {...?user?.panels};
+    final teams = {...teamOptions};
+    String? selectedTeam = user?.team;
+    if (selectedTeam?.isEmpty ?? true) selectedTeam = null;
+
+    return showDialog<_StaffDetails>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(user == null ? 'Add staff' : 'Edit staff'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: emailController,
+                    enabled: user == null,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: roleController,
+                    decoration: const InputDecoration(labelText: 'Role'),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: selectedTeam,
+                          decoration: const InputDecoration(
+                            labelText: 'Branch / team',
+                          ),
+                          hint: const Text('Select branch or team'),
+                          items: teams
+                              .map(
+                                (team) => DropdownMenuItem(
+                                  value: team,
+                                  child: Text(team),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (team) {
+                            setDialogState(() => selectedTeam = team);
+                          },
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Add branch or team',
+                        icon: const Icon(Icons.add_circle_outline),
+                        onPressed: () async {
+                          final team = await _showAddTeamDialog(context);
+                          if (team == null || team.isEmpty) return;
+                          setDialogState(() {
+                            teams.add(team);
+                            selectedTeam = team;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    teams.isEmpty
+                        ? 'No branches or teams yet. Add one to assign it.'
+                        : 'Select an existing branch or team, or add a new one.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Panel permissions',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  for (final panel in adminPanelLabels.entries)
+                    CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(panel.value),
+                      value: panels.contains(panel.key),
+                      onChanged: (selected) {
+                        setDialogState(() {
+                          selected == true
+                              ? panels.add(panel.key)
+                              : panels.remove(panel.key);
+                        });
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => context.pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                final email = emailController.text.trim();
+                if (name.isEmpty || email.isEmpty) return;
+                context.pop(
+                  _StaffDetails(
+                    name: name,
+                    email: email,
+                    role: roleController.text.trim(),
+                    team: selectedTeam ?? '',
+                    panels: panels.toList()..sort(),
+                  ),
+                );
+              },
+              child: Text(user == null ? 'Add' : 'Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<String> _teamOptions(WidgetRef ref, {String? currentTeam}) {
+    final teams =
+        ref
+            .read(allUsersProvider)
+            .valueOrNull
+            ?.map((user) => user.team.trim())
+            .where((team) => team.isNotEmpty)
+            .toSet() ??
+        <String>{};
+    if (currentTeam?.trim().isNotEmpty ?? false) {
+      teams.add(currentTeam!.trim());
+    }
+    return teams.toList()..sort();
+  }
+
+  Future<String?> _showAddTeamDialog(BuildContext context) async {
+    final controller = TextEditingController();
+    final team = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add branch or team'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Branch / team name'),
+          onSubmitted: (value) => context.pop(value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => context.pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => context.pop(controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return team;
   }
 
   Future<void> _confirmAndToggle(
@@ -210,4 +405,20 @@ class UserManagementScreen extends ConsumerWidget {
       }
     }
   }
+}
+
+class _StaffDetails {
+  final String name;
+  final String email;
+  final String role;
+  final String team;
+  final List<String> panels;
+
+  const _StaffDetails({
+    required this.name,
+    required this.email,
+    required this.role,
+    required this.team,
+    required this.panels,
+  });
 }

@@ -30,9 +30,11 @@ class Message {
   final String? mediaType;
   final String? templateId;
   final MessageStatus status;
+  final String? failureReason;
   final String? senderName;
   final String? senderId;
   final DateTime createdAt;
+  final DateTime? eventAt;
   final DateTime? readAt;
 
   const Message({
@@ -46,9 +48,11 @@ class Message {
     this.mediaType,
     this.templateId,
     this.status = MessageStatus.queued,
+    this.failureReason,
     this.senderName,
     this.senderId,
     required this.createdAt,
+    this.eventAt,
     this.readAt,
   });
 
@@ -56,6 +60,7 @@ class Message {
     final rawType = (map['type'] ?? '').toString();
     final rawMediaType = (map['mediaType'] ?? '').toString();
     final mediaUrl = map['mediaUrl']?.toString();
+    final content = _readMessageContent(map);
 
     return Message(
       id: id,
@@ -66,7 +71,7 @@ class Message {
         orElse: () => MessageDirection.inbound,
       ),
       type: _parseMessageType(rawType, rawMediaType, mediaUrl),
-      content: map['content'] ?? '',
+      content: content,
       mediaUrl: mediaUrl,
       mediaType: _normalizeMediaType(rawMediaType, mediaUrl),
       templateId: map['templateId'],
@@ -74,11 +79,21 @@ class Message {
         (e) => e.name == map['status'],
         orElse: () => MessageStatus.queued,
       ),
+      failureReason: map['failureReason']?.toString(),
       senderName: map['senderName'],
       senderId: map['senderId'],
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      eventAt: (map['eventAt'] as Timestamp?)?.toDate(),
       readAt: (map['readAt'] as Timestamp?)?.toDate(),
     );
+  }
+
+  static String _readMessageContent(Map<String, dynamic> map) {
+    for (final field in ['content', 'text', 'body', 'message']) {
+      final value = map[field]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return '';
   }
 
   static MessageType _parseMessageType(
@@ -108,6 +123,9 @@ class Message {
     if (combined.contains('location')) return MessageType.location;
     if (combined.contains('template')) return MessageType.template;
     if (combined.contains('call')) return MessageType.call;
+    if (combined.contains('voice_note') || combined.contains('voice-note')) {
+      return MessageType.voiceNote;
+    }
 
     final url = (mediaUrl ?? '').toLowerCase();
     if (url.isNotEmpty) {
@@ -165,9 +183,11 @@ class Message {
       'mediaType': mediaType,
       'templateId': templateId,
       'status': status.name,
+      'failureReason': failureReason,
       'senderName': senderName,
       'senderId': senderId,
       'createdAt': Timestamp.fromDate(createdAt),
+      'eventAt': eventAt != null ? Timestamp.fromDate(eventAt!) : null,
       'readAt': readAt != null ? Timestamp.fromDate(readAt!) : null,
     };
   }
@@ -175,6 +195,7 @@ class Message {
 
 class Conversation {
   final String id;
+  final String clientId;
   final String contactId;
   final String contactName;
   final String contactPhone;
@@ -189,6 +210,7 @@ class Conversation {
 
   const Conversation({
     required this.id,
+    this.clientId = '',
     required this.contactId,
     required this.contactName,
     required this.contactPhone,
@@ -205,6 +227,7 @@ class Conversation {
   factory Conversation.fromMap(Map<String, dynamic> map, String id) {
     return Conversation(
       id: id,
+      clientId: map['clientId'] ?? '',
       contactId: map['contactId'] ?? '',
       contactName: map['contactName'] ?? '',
       contactPhone: map['contactPhone'] ?? '',

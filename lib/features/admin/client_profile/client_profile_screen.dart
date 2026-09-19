@@ -23,6 +23,7 @@ class ClientProfileScreen extends ConsumerStatefulWidget {
 
 class _ClientProfileScreenState extends ConsumerState<ClientProfileScreen> {
   late TextEditingController _notesController;
+  String? _notesLoadedForClientId;
 
   @override
   void initState() {
@@ -65,7 +66,10 @@ class _ClientProfileScreenState extends ConsumerState<ClientProfileScreen> {
             return const Center(child: Text('Client not found'));
           }
 
-          _notesController.text = client.notes ?? '';
+          if (_notesLoadedForClientId != client.id) {
+            _notesController.text = client.notes ?? '';
+            _notesLoadedForClientId = client.id;
+          }
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -365,7 +369,9 @@ class _ClientDetailsSideSheetState extends State<ClientDetailsSideSheet> {
   late final TextEditingController _categoryController;
   late final TextEditingController _emailController;
   late final TextEditingController _phoneController;
+  late final TextEditingController _alternatePhoneController;
   late final TextEditingController _managerController;
+  late final TextEditingController _notesController;
   late final TextEditingController _followUpNotesController;
   late ClientStage _stage;
   String? _selectedStaffName;
@@ -381,13 +387,21 @@ class _ClientDetailsSideSheetState extends State<ClientDetailsSideSheet> {
     _categoryController = TextEditingController(text: widget.client.category);
     _emailController = TextEditingController(text: widget.client.contactEmail);
     _phoneController = TextEditingController(text: widget.client.contactPhone);
+    _alternatePhoneController = TextEditingController(
+      text: widget.client.alternatePhone ?? '',
+    );
     _managerController = TextEditingController(
       text: widget.client.assignedManager ?? '',
     );
+    _notesController = TextEditingController(text: widget.client.notes ?? '');
     _followUpNotesController = TextEditingController(
       text: widget.client.followUpNotes ?? '',
     );
-    _stage = widget.client.stage;
+    _stage =
+        widget.client.stage == ClientStage.reach ||
+            widget.client.stage == ClientStage.register
+        ? ClientStage.click
+        : widget.client.stage;
     _selectedStaffName = widget.client.assignedManager;
     _followUpAt = widget.client.followUpAt;
   }
@@ -399,7 +413,9 @@ class _ClientDetailsSideSheetState extends State<ClientDetailsSideSheet> {
     _categoryController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _alternatePhoneController.dispose();
     _managerController.dispose();
+    _notesController.dispose();
     _followUpNotesController.dispose();
     super.dispose();
   }
@@ -418,10 +434,14 @@ class _ClientDetailsSideSheetState extends State<ClientDetailsSideSheet> {
       category: _categoryController.text.trim(),
       contactEmail: _emailController.text.trim().toLowerCase(),
       contactPhone: _phoneController.text.trim(),
+      alternatePhone: _alternatePhoneController.text.trim().isEmpty
+          ? null
+          : _alternatePhoneController.text.trim(),
+      clearAlternatePhone: _alternatePhoneController.text.trim().isEmpty,
       assignedManager: managerName.isEmpty ? null : managerName,
       stage: _stage,
       updatedDate: DateTime.now(),
-      notes: widget.client.notes,
+      notes: _notesController.text.trim(),
       followUpAt: _followUpAt,
       followUpNotes: _followUpNotesController.text.trim().isEmpty
           ? null
@@ -516,6 +536,15 @@ class _ClientDetailsSideSheetState extends State<ClientDetailsSideSheet> {
                           ),
                         ),
                         const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _alternatePhoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: 'Alternate phone',
+                            prefixIcon: Icon(Icons.phone_android_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         staffUsersAsync.when(
                           data: (users) {
                             final staffOptions = users
@@ -575,6 +604,17 @@ class _ClientDetailsSideSheetState extends State<ClientDetailsSideSheet> {
                           error: (error, stackTrace) => const SizedBox.shrink(),
                         ),
                         const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _notesController,
+                          minLines: 3,
+                          maxLines: 6,
+                          decoration: const InputDecoration(
+                            labelText: 'Notes',
+                            alignLabelWithHint: true,
+                            prefixIcon: Icon(Icons.notes_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         _EditFollowUpFields(
                           followUpAt: _followUpAt,
                           notesController: _followUpNotesController,
@@ -589,6 +629,11 @@ class _ClientDetailsSideSheetState extends State<ClientDetailsSideSheet> {
                             prefixIcon: Icon(Icons.timeline_outlined),
                           ),
                           items: ClientStage.values
+                              .where(
+                                (item) =>
+                                    item != ClientStage.reach &&
+                                    item != ClientStage.register,
+                              )
                               .map(
                                 (item) => DropdownMenuItem(
                                   value: item,
@@ -860,6 +905,9 @@ class _ClientPlanProgressCard extends ConsumerWidget {
               features: plan.features,
               completedFeatures: plan.completedFeatures,
               featureProgress: plan.featureProgress,
+              categoryOrder: plan.type == PlanType.subscription
+                  ? subscriptionPlanFeatureCategories
+                  : setupPlanFeatureCategories,
               onToggle: (raw, done) => _toggleFeature(ref, raw, done),
               onProgressChange: (raw, percent) =>
                   _updateFeatureProgress(ref, raw, percent),

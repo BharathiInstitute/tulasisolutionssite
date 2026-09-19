@@ -33,6 +33,13 @@ class ChatProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  Future<Map<String, dynamic>?> getContact(String contactId) {
+    return _firestoreService.getContact(
+      contactId,
+      ownerClientId: _activeConversation?.clientId,
+    );
+  }
+
   void clearError() {
     _error = null;
     notifyListeners();
@@ -40,6 +47,31 @@ class ChatProvider extends ChangeNotifier {
 
   int get totalUnread =>
       _conversations.fold(0, (sum, c) => sum + c.unreadCount);
+
+  void markConversationAsReadLocally(String conversationId) {
+    final index = _conversations.indexWhere((c) => c.id == conversationId);
+    if (index == -1) return;
+
+    final current = _conversations[index];
+    if (current.unreadCount <= 0) return;
+
+    _conversations[index] = Conversation(
+      id: current.id,
+      clientId: current.clientId,
+      contactId: current.contactId,
+      contactName: current.contactName,
+      contactPhone: current.contactPhone,
+      contactAvatarUrl: current.contactAvatarUrl,
+      channel: current.channel,
+      lastMessage: current.lastMessage,
+      lastMessageAt: current.lastMessageAt,
+      unreadCount: 0,
+      isActive: current.isActive,
+      assignedTo: current.assignedTo,
+      createdAt: current.createdAt,
+    );
+    notifyListeners();
+  }
 
   void loadConversations() {
     _isLoading = true;
@@ -52,7 +84,10 @@ class ChatProvider extends ChangeNotifier {
 
   void _startConversationsStream() {
     _conversationsSub?.cancel();
-    _conversationsSub = _firestoreService.watchConversations().listen(
+    final stream = _firestoreService.isConfigured
+      ? _firestoreService.watchConversations()
+      : _firestoreService.watchAllConversations();
+    _conversationsSub = stream.listen(
       (list) {
         _conversations = list;
         _isLoading = false;
@@ -88,12 +123,16 @@ class ChatProvider extends ChangeNotifier {
   void openConversation(Conversation conversation) {
     _activeConversation = conversation;
     _messages = [];
+    markConversationAsReadLocally(conversation.id);
     notifyListeners();
 
     _messagesSub?.cancel();
-    _messagesSub = _firestoreService.watchMessages(conversation.id).listen((
-      list,
-    ) {
+    _messagesSub = _firestoreService
+        .watchMessages(
+          conversation.id,
+          ownerClientId: conversation.clientId,
+        )
+        .listen((list) {
       final hadNewInbound =
           _msg91Service != null &&
           list.any(
@@ -107,16 +146,25 @@ class ChatProvider extends ChangeNotifier {
 
       if (hadNewInbound) {
         _msg91Service
-            .markConversationRead(conversationId: conversation.id)
+            .markConversationRead(
+              conversationId: conversation.id,
+              clientId: conversation.clientId,
+            )
             .catchError((e) {
               debugPrint('Failed to send read receipts: $e');
             });
       }
+    }, onError: (Object error) {
+      _error = 'Failed to load messages: $error';
+      notifyListeners();
     });
 
     if (_msg91Service != null && conversation.unreadCount > 0) {
       _msg91Service
-          .markConversationRead(conversationId: conversation.id)
+          .markConversationRead(
+            conversationId: conversation.id,
+            clientId: conversation.clientId,
+          )
           .catchError((e) {
             debugPrint('Failed to send read receipts: $e');
           });
@@ -130,24 +178,39 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> startQualificationAutomation(Conversation conversation) async {
+    if (_msg91Service == null) {
+      throw StateError('Messaging service is unavailable');
+    }
+    await _msg91Service.startQualificationAutomation(
+      conversationId: conversation.id,
+    );
+  }
+
   Future<Conversation?> createConversation({
     required String contactId,
     required String contactName,
     required String contactPhone,
     ConversationChannel channel = ConversationChannel.whatsapp,
+    String? ownerClientId,
   }) async {
     try {
       final conversation = Conversation(
         id: '',
+        clientId: ownerClientId ?? _firestoreService.currentClientId,
         contactId: contactId,
         contactName: contactName,
         contactPhone: contactPhone,
         channel: channel,
         createdAt: DateTime.now(),
       );
-      final id = await _firestoreService.createConversation(conversation);
+      final id = await _firestoreService.createConversation(
+        conversation,
+        ownerClientId: ownerClientId,
+      );
       return Conversation(
         id: id,
+        clientId: ownerClientId ?? _firestoreService.currentClientId,
         contactId: contactId,
         contactName: contactName,
         contactPhone: contactPhone,
@@ -184,6 +247,7 @@ class ChatProvider extends ChangeNotifier {
       final msgId = await _firestoreService.sendMessage(
         _activeConversation!.id,
         message,
+        ownerClientId: _activeConversation!.clientId,
       );
 
       if (_msg91Service != null) {
@@ -191,6 +255,7 @@ class ChatProvider extends ChangeNotifier {
           await _msg91Service.sendWhatsAppMessage(
             contactId: _activeConversation!.contactId,
             content: content.trim(),
+            clientId: _activeConversation!.clientId,
             conversationId: _activeConversation!.id,
             messageDocId: msgId,
           );
@@ -212,6 +277,37 @@ class ChatProvider extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  Future<void> sendMessageToConversation(
+    Conversation conversation,
+    String content,
+  ) async {
+    final message = Message(
+      id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
+      conversationId: conversation.id,
+      contactId: conversation.contactId,
+      direction: MessageDirection.outbound,
+      content: content.trim(),
+      status: MessageStatus.queued,
+      senderName: 'You',
+      createdAt: DateTime.now(),
+    );
+    final messageId = await _firestoreService.sendMessage(
+      conversation.id,
+      message,
+      ownerClientId: conversation.clientId,
+    );
+    if (_msg91Service == null) {
+      throw StateError('Messaging service is unavailable');
+    }
+    await _msg91Service.sendWhatsAppMessage(
+      contactId: conversation.contactId,
+      content: content.trim(),
+      clientId: conversation.clientId,
+      conversationId: conversation.id,
+      messageDocId: messageId,
+    );
   }
 
   Future<void> sendTemplateMessage(
@@ -245,12 +341,14 @@ class ChatProvider extends ChangeNotifier {
       final msgId = await _firestoreService.sendMessage(
         _activeConversation!.id,
         message,
+        ownerClientId: _activeConversation!.clientId,
       );
 
       if (_msg91Service != null) {
         await _msg91Service.sendWhatsAppMessage(
           contactId: _activeConversation!.contactId,
           content: displayContent,
+          clientId: _activeConversation!.clientId,
           templateName: template.name,
           templateParams: {
             for (var i = 0; i < paramValues.length; i++)
@@ -301,12 +399,14 @@ class ChatProvider extends ChangeNotifier {
       final msgId = await _firestoreService.sendMessage(
         _activeConversation!.id,
         message,
+        ownerClientId: _activeConversation!.clientId,
       );
 
       if (_msg91Service != null) {
         await _msg91Service.sendWhatsAppMedia(
           contactId: _activeConversation!.contactId,
           mediaUrl: mediaUrl,
+          clientId: _activeConversation!.clientId,
           caption: trimmedCaption,
           type: type,
           conversationId: _activeConversation!.id,

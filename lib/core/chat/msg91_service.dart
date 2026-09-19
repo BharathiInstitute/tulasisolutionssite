@@ -88,6 +88,7 @@ class MSG91Service {
   Future<void> sendWhatsAppMessage({
     required String contactId,
     required String content,
+    String? clientId,
     String? templateName,
     Map<String, String>? templateParams,
     String? conversationId,
@@ -97,6 +98,7 @@ class MSG91Service {
       'contactId': contactId,
       'content': content,
       'channel': 'whatsapp',
+      if (clientId != null) 'clientId': clientId,
       if (templateName != null) 'templateName': templateName,
       if (templateParams != null) 'templateParams': templateParams,
       if (conversationId != null) 'conversationId': conversationId,
@@ -107,6 +109,7 @@ class MSG91Service {
   Future<void> sendWhatsAppMedia({
     required String contactId,
     required String mediaUrl,
+    String? clientId,
     String? caption,
     MessageType type = MessageType.image,
     String? conversationId,
@@ -116,6 +119,7 @@ class MSG91Service {
       'contactId': contactId,
       'content': caption ?? '',
       'channel': 'whatsapp',
+      if (clientId != null) 'clientId': clientId,
       'mediaUrl': mediaUrl,
       'mediaType': type.name,
       if (conversationId != null) 'conversationId': conversationId,
@@ -154,13 +158,29 @@ class MSG91Service {
 
   // ─── READ RECEIPTS ──────────────────────────────────────
 
-  Future<void> markConversationRead({required String conversationId}) async {
-    await _cf.call('markConversationRead', {'conversationId': conversationId});
+  Future<void> markConversationRead({
+    required String conversationId,
+    String? clientId,
+  }) async {
+    await _cf.call('markConversationRead', {
+      'conversationId': conversationId,
+      if (clientId?.isNotEmpty == true) 'clientId': clientId,
+    });
+  }
+
+  Future<void> startQualificationAutomation({
+    required String conversationId,
+  }) async {
+    await _cf.call('startQualificationAutomation', {
+      'conversationId': conversationId,
+    });
   }
 
   // ─── TEMPLATES ───────────────────────────────────────────
 
-  Future<List<MessageTemplate>> getTemplates({String? channel}) async {
+  Future<List<MessageTemplate>> getTemplates({
+    String? channel,
+  }) async {
     final result = await _cf.call('listTemplates', {
       if (channel != null) 'channel': channel,
     });
@@ -175,53 +195,32 @@ class MSG91Service {
         .toList();
   }
 
-  Future<void> syncWhatsAppTemplates() async {
-    await _cf.call('syncWhatsAppTemplates');
+  Future<List<MessageTemplate>> getPendingWhatsAppTemplates() async {
+    final result = await _cf.call('listTemplates');
+    final list = result['pendingTemplates'] as List<dynamic>? ?? [];
+    return list
+        .map(
+          (template) => MessageTemplate.fromMap(
+            Map<String, dynamic>.from(template as Map),
+            template['id'] as String? ?? '',
+          ),
+        )
+        .toList();
   }
 
-  Future<void> createTemplate({
+  Future<Map<String, dynamic>> submitWhatsAppTemplate({
     required String name,
     required String body,
-    String channel = 'whatsapp',
-    String? category,
-    String? dltTemplateId,
-    String? flowId,
+    required String category,
+    required String language,
+    String? footer,
   }) async {
-    await _cf.call('createTemplate', {
+    return _cf.call('submitWhatsAppTemplate', {
       'name': name,
       'body': body,
-      'channel': channel,
-      if (category != null) 'category': category,
-      if (dltTemplateId != null) 'dltTemplateId': dltTemplateId,
-      if (flowId != null) 'flowId': flowId,
-    });
-  }
-
-  Future<void> deleteTemplate(String templateId) async {
-    await _cf.call('deleteTemplate', {'templateId': templateId});
-  }
-
-  Future<Map<String, dynamic>> submitTemplate(String templateId) async {
-    return _cf.call('submitTemplate', {'templateId': templateId});
-  }
-
-  Future<void> updateTemplate({
-    required String templateId,
-    String? name,
-    String? body,
-    String? category,
-    String? language,
-    String? dltTemplateId,
-    String? flowId,
-  }) async {
-    await _cf.call('updateTemplate', {
-      'templateId': templateId,
-      if (name != null) 'name': name,
-      if (body != null) 'body': body,
-      if (category != null) 'category': category,
-      if (language != null) 'language': language,
-      if (dltTemplateId != null) 'dltTemplateId': dltTemplateId,
-      if (flowId != null) 'flowId': flowId,
+      'category': category,
+      'language': language,
+      if (footer?.isNotEmpty == true) 'footer': footer,
     });
   }
 }

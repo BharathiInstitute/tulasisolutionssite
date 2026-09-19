@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/widgets/app_drawer.dart';
@@ -19,11 +18,6 @@ class ClientDashboardScreen extends ConsumerWidget {
       currentRoute: '/client/dashboard',
       title: 'My Dashboard',
       actions: [
-        IconButton(
-          tooltip: 'Account details',
-          icon: const Icon(Icons.manage_accounts),
-          onPressed: () => context.push('/account-details'),
-        ),
         IconButton(
           icon: const Icon(Icons.logout),
           onPressed: () {

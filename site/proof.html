@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=3" />
+  <link rel="stylesheet" href="styles.css?v=6" />
 </head>
 <body>
 
@@ -17,6 +17,7 @@
     <div class="container nav-inner">
       <a class="nav-logo" href="index.html" aria-label="Tulasi Solutions home">
         <img class="logo-image" src="assets/logo.png" alt="Tulasi Solutions" />
+        <span class="logo-wordmark">Tulasi Solutions</span>
       </a>
       <nav class="nav-links" aria-label="Main navigation">
         <a href="index.html">Home</a>
@@ -25,7 +26,7 @@
         <a href="pricing.html">Pricing</a>
         <a href="how-it-works.html">How It Works</a>
         <a href="proof.html" class="active">Proof</a>
-        <a class="nav-book" href="contact.html">Book Consultation</a>
+        <a class="nav-book" href="contact.html">Chat With Us</a>
       </nav>
       <div class="nav-cta">
         <a class="btn btn-primary" href="app/" aria-label="Login to app">Login</a>
@@ -53,15 +54,15 @@
         </div>
         <div class="grid grid-3">
           <div class="card reveal">
-            <h3>🛍️ Tulasi Stores</h3>
+            <h3 class="product-title"><span class="product-mark" aria-hidden="true">S</span>Tulasi Stores</h3>
             <p>Retail/product POS &amp; billing.</p>
           </div>
           <div class="card reveal">
-            <h3>🍽️ Tulasi Hotels/Restaurants</h3>
+            <h3 class="product-title"><span class="product-mark" aria-hidden="true">H</span>Tulasi Hotels/Restaurants</h3>
             <p>Hospitality management.</p>
           </div>
           <div class="card reveal">
-            <h3>📡 Tulasi Connect</h3>
+            <h3 class="product-title"><span class="product-mark" aria-hidden="true">C</span>Tulasi Connect</h3>
             <p>WhatsApp/SMS/voice CRM infrastructure.</p>
           </div>
         </div>
@@ -77,7 +78,10 @@
         </div>
         <div class="grid grid-3">
           <div class="card case-study-card reveal">
-            <span class="case-study-type">Retail</span>
+            <div class="case-study-tags">
+              <span class="case-study-type">Retail</span>
+              <span class="case-study-disclosure">Illustrative example</span>
+            </div>
             <h3>Lakshmi Home Essentials</h3>
             <p>A neighborhood home-needs store moving from manual orders to a simple digital sales process.</p>
             <ul class="case-study-results">
@@ -87,7 +91,10 @@
             </ul>
           </div>
           <div class="card case-study-card reveal">
-            <span class="case-study-type">Food</span>
+            <div class="case-study-tags">
+              <span class="case-study-type">Food</span>
+              <span class="case-study-disclosure">Illustrative example</span>
+            </div>
             <h3>Green Basket Fresh</h3>
             <p>A local produce delivery business building repeat orders across nearby Hyderabad communities.</p>
             <ul class="case-study-results">
@@ -97,7 +104,10 @@
             </ul>
           </div>
           <div class="card case-study-card reveal">
-            <span class="case-study-type">Services</span>
+            <div class="case-study-tags">
+              <span class="case-study-type">Services</span>
+              <span class="case-study-disclosure">Illustrative example</span>
+            </div>
             <h3>Aarogya Family Clinic</h3>
             <p>A growing neighborhood clinic improving appointment handling and patient communication.</p>
             <ul class="case-study-results">
@@ -125,7 +135,7 @@
     <section class="section section-dark">
       <div class="container" style="text-align: center;">
         <h2 class="reveal">Ready to be part of this?</h2>
-        <a class="btn btn-primary reveal" href="contact.html" style="margin-top: 12px;">Book Consultation</a>
+        <a class="btn btn-primary reveal" href="contact.html" style="margin-top: 12px;">Talk About Your Business</a>
       </div>
     </section>
   </main>
@@ -146,7 +156,7 @@
             <li><a href="about.html">About</a></li>
             <li><a href="services.html">Services</a></li>
             <li><a href="pricing.html">Pricing</a></li>
-            <li><a href="contact.html">Book Consultation</a></li>
+            <li><a href="contact.html">Chat With Us</a></li>
           </ul>
         </div>
         <div class="footer-col">
@@ -158,15 +168,6 @@
             <li>10 AM – 7 PM</li>
           </ul>
         </div>
-        <div class="footer-col">
-          <h4>Social</h4>
-          <div class="footer-social">
-            <a href="#" aria-label="Facebook">f</a>
-            <a href="#" aria-label="Instagram">ig</a>
-            <a href="#" aria-label="LinkedIn">in</a>
-            <a href="#" aria-label="YouTube">yt</a>
-          </div>
-        </div>
       </div>
       <div class="footer-bottom">
         <span>© Tulasi Solutions — Hyderabad, Telangana</span>
@@ -175,6 +176,6 @@
     </div>
   </footer>
 
-  <script src="script.js?v=3"></script>
+  <script src="script.js?v=6"></script>
 </body>
 </html>
