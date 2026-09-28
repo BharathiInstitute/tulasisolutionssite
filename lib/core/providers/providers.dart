@@ -1,9 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/brand_brief.dart';
 import '../services/firebase_service.dart';
 import '../models/models.dart';
-import '../models/website_brief.dart';
 import '../models/weekly_report.dart';
 import '../chat/chat.dart';
 import '../performance/performance_models.dart';
@@ -40,7 +38,8 @@ final currentUserProfileStreamProvider = StreamProvider<AppUser?>((ref) {
   return authService.getUserProfileStream(user.uid);
 });
 
-// Clients list provider
+// Use a server fetch because persistent Firestore streams are blocked on some
+// operator networks. Chat invalidates this after imports and new conversations.
 final clientsListProvider = FutureProvider<List<Client>>((ref) {
   final firestoreService = ref.watch(firestoreServiceProvider);
   return firestoreService.getClientsOnce();
@@ -54,14 +53,6 @@ final clientProvider = StreamProvider.family<Client?, String>((
   final firestoreService = ref.watch(firestoreServiceProvider);
   final client = await firestoreService.getClient(clientId);
   yield client;
-});
-
-final currentClientProvider = FutureProvider<Client?>((ref) async {
-  final user = ref.watch(firebaseAuthServiceProvider).getCurrentUser();
-  if (user?.email == null) return null;
-  return ref
-      .watch(firestoreServiceProvider)
-      .getClientByEmail(user!.email!.trim().toLowerCase());
 });
 
 final weeklyReportsProvider = StreamProvider.family<List<WeeklyReport>, String>(
@@ -114,39 +105,6 @@ final allPlansProvider = FutureProvider<List<Plan>>((ref) {
 final allPlansStreamProvider = StreamProvider<List<Plan>>((ref) {
   final firestoreService = ref.watch(firestoreServiceProvider);
   return firestoreService.getAllPlansStream();
-});
-
-final salesTasksProvider = StreamProvider<List<SalesTask>>((ref) {
-  return ref.watch(firestoreServiceProvider).getSalesTasksStream();
-});
-
-final websiteBriefProvider = StreamProvider.family<WebsiteBrief?, String>((
-  ref,
-  planId,
-) {
-  return ref.watch(firestoreServiceProvider).getWebsiteBriefStream(planId);
-});
-
-final clientWebsiteBriefsProvider =
-    StreamProvider.family<List<WebsiteBrief>, String>((ref, clientId) {
-      return ref
-          .watch(firestoreServiceProvider)
-          .getClientWebsiteBriefsStream(clientId);
-    });
-
-final allWebsiteBriefsProvider = StreamProvider<List<WebsiteBrief>>((ref) {
-  return ref.watch(firestoreServiceProvider).getAllWebsiteBriefsStream();
-});
-
-final brandBriefProvider = StreamProvider.family<BrandBrief?, String>((
-  ref,
-  planId,
-) {
-  return ref.watch(firestoreServiceProvider).getBrandBriefStream(planId);
-});
-
-final allBrandBriefsProvider = StreamProvider<List<BrandBrief>>((ref) {
-  return ref.watch(firestoreServiceProvider).getAllBrandBriefsStream();
 });
 
 final paymentsProvider = StreamProvider<List<PaymentRecord>>((ref) {
@@ -207,12 +165,9 @@ final selectedClientProvider = StateProvider<String?>((ref) => null);
 
 // ─── CHAT PROVIDERS ──────────────────────────────────────────
 
-/// Provides the ChatProvider instance tied to the current user's client
+/// Provides the global ChatProvider used by the admin chat panel.
 final chatProvider = ChangeNotifierProvider<ChatProvider>((ref) {
-  final client = ref.watch(currentClientProvider).valueOrNull;
-  final clientId = client?.id ?? '';
-
-  final firestoreService = ChatFirestoreService(clientId: clientId);
+  final firestoreService = ChatFirestoreService(clientId: '');
   final cloudFunctions = CloudFunctionService();
   final msg91Service = MSG91Service(cloudFunctions: cloudFunctions);
 

@@ -203,8 +203,11 @@ class Conversation {
   final ConversationChannel channel;
   final String? lastMessage;
   final DateTime? lastMessageAt;
+  final MessageDirection? lastMessageDirection;
   final int unreadCount;
   final bool isActive;
+  final bool isArchived;
+  final String stage;
   final String? assignedTo;
   final DateTime createdAt;
 
@@ -218,8 +221,11 @@ class Conversation {
     this.channel = ConversationChannel.whatsapp,
     this.lastMessage,
     this.lastMessageAt,
+    this.lastMessageDirection,
     this.unreadCount = 0,
     this.isActive = true,
+    this.isArchived = false,
+    this.stage = 'click',
     this.assignedTo,
     required this.createdAt,
   });
@@ -238,8 +244,13 @@ class Conversation {
       ),
       lastMessage: map['lastMessage'],
       lastMessageAt: (map['lastMessageAt'] as Timestamp?)?.toDate(),
+        lastMessageDirection: MessageDirection.values
+          .where((direction) => direction.name == map['lastMessageDirection'])
+          .firstOrNull,
       unreadCount: map['unreadCount'] ?? 0,
       isActive: map['isActive'] ?? true,
+      isArchived: map['isArchived'] == true,
+      stage: map['stage'] ?? 'click',
       assignedTo: map['assignedTo'],
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -256,8 +267,11 @@ class Conversation {
       'lastMessageAt': lastMessageAt != null
           ? Timestamp.fromDate(lastMessageAt!)
           : null,
+        'lastMessageDirection': lastMessageDirection?.name,
       'unreadCount': unreadCount,
       'isActive': isActive,
+      'isArchived': isArchived,
+      'stage': stage,
       'assignedTo': assignedTo,
       'createdAt': Timestamp.fromDate(createdAt),
     };
@@ -276,6 +290,9 @@ class MessageTemplate {
   final String? dltTemplateId;
   final String? flowId;
   final String? rejectionReason;
+  final String? headerImageUrl;
+  final String? ctaUrl;
+  final String? ctaLabel;
   final DateTime createdAt;
 
   const MessageTemplate({
@@ -290,6 +307,9 @@ class MessageTemplate {
     this.dltTemplateId,
     this.flowId,
     this.rejectionReason,
+    this.headerImageUrl,
+    this.ctaUrl,
+    this.ctaLabel,
     required this.createdAt,
   });
 
@@ -308,10 +328,12 @@ class MessageTemplate {
       id: id,
       name: map['name'] ?? '',
       content: content,
-      type: MessageType.values.firstWhere(
-        (e) => e.name == map['type'],
-        orElse: () => MessageType.text,
-      ),
+      type: map['headerImageUrl']?.toString().isNotEmpty == true
+          ? MessageType.image
+          : MessageType.values.firstWhere(
+              (e) => e.name == map['type'],
+              orElse: () => MessageType.text,
+            ),
       category: map['category'],
       language: map['language'] ?? 'en',
       status: map['status'] ?? 'draft',
@@ -319,6 +341,9 @@ class MessageTemplate {
       dltTemplateId: map['dltTemplateId'],
       flowId: map['flowId'],
       rejectionReason: map['rejectionReason'],
+      headerImageUrl: map['headerImageUrl'],
+      ctaUrl: map['ctaUrl'],
+      ctaLabel: map['ctaLabel'],
       createdAt: createdAt,
     );
   }

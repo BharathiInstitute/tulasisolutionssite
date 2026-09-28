@@ -6,9 +6,7 @@ import 'package:tulasisolutionssite/core/widgets/brand_logo.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
-  final bool isAdmin;
-
-  const AuthScreen({super.key, required this.isAdmin});
+  const AuthScreen({super.key});
 
   @override
   ConsumerState<AuthScreen> createState() => _AuthScreenState();
@@ -18,8 +16,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _nameController = TextEditingController();
-  bool _isRegistering = false;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -27,7 +23,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _nameController.dispose();
     super.dispose();
   }
 
@@ -40,19 +35,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     try {
       final auth = ref.read(firebaseAuthServiceProvider);
-      if (_isRegistering) {
-        await auth.signUpWithEmail(
-          email: _emailController.text,
-          password: _passwordController.text,
-          name: _nameController.text,
-          isAdmin: false,
-        );
-      } else {
-        await auth.signInWithEmail(
-          email: _emailController.text,
-          password: _passwordController.text,
-        );
-      }
+      await auth.signInWithEmail(
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
     } catch (error) {
       if (mounted) setState(() => _errorMessage = _messageFor(error));
     } finally {
@@ -103,7 +89,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final roleName = widget.isAdmin ? 'Admin' : 'User';
     const brandGreen = Color(0xFF3AB32A);
     const deepGreen = Color(0xFF0F6B3A);
     const charcoal = Color(0xFF1A1F1B);
@@ -195,7 +180,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                       ),
                                       const SizedBox(height: 18),
                                       Text(
-                                        '$roleName Login',
+                                        'Admin Login',
                                         textAlign: TextAlign.center,
                                         style: const TextStyle(
                                           fontSize: 30,
@@ -214,20 +199,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                         ),
                                       ),
                                       const SizedBox(height: 28),
-                                      if (_isRegistering) ...[
-                                        TextFormField(
-                                          controller: _nameController,
-                                          decoration: _fieldDecoration(
-                                            'Full name',
-                                          ),
-                                          validator: (value) =>
-                                              value == null ||
-                                                  value.trim().isEmpty
-                                              ? 'Enter your name'
-                                              : null,
-                                        ),
-                                        const SizedBox(height: 18),
-                                      ],
                                       TextFormField(
                                         controller: _emailController,
                                         keyboardType:
@@ -315,52 +286,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                         child: const Text(
                                           'Forgot password?',
                                           style: TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      if (!widget.isAdmin)
-                                        TextButton(
-                                          onPressed: _isLoading
-                                              ? null
-                                              : () => setState(
-                                                  () => _isRegistering =
-                                                      !_isRegistering,
-                                                ),
-                                          style: TextButton.styleFrom(
-                                            foregroundColor: deepGreen,
-                                            padding: EdgeInsets.zero,
-                                            minimumSize: const Size(0, 30),
-                                          ),
-                                          child: Text(
-                                            _isRegistering
-                                                ? 'Already have an account? Sign in'
-                                                : 'New user? Register',
-                                            style: const TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      TextButton(
-                                        onPressed: _isLoading
-                                            ? null
-                                            : () => context.go(
-                                                widget.isAdmin
-                                                    ? '/user/login'
-                                                    : '/admin/login',
-                                              ),
-                                        style: TextButton.styleFrom(
-                                          foregroundColor: deepGreen,
-                                          padding: EdgeInsets.zero,
-                                          minimumSize: const Size(0, 30),
-                                        ),
-                                        child: Text(
-                                          widget.isAdmin
-                                              ? 'User login'
-                                              : 'Admin login',
-                                          style: const TextStyle(
                                             fontSize: 15,
                                             fontWeight: FontWeight.w600,
                                           ),

@@ -3,6 +3,60 @@ import '../models/models.dart';
 String taskKey(String rawFeature, int? unitIndex) =>
     unitIndex == null ? rawFeature : '$rawFeature#$unitIndex';
 
+Plan renamePlanTask(
+  Plan plan,
+  String oldFeature, {
+  required String category,
+  required String title,
+}) {
+  final newFeature = encodePlanTaskFeature(category, title);
+  if (newFeature == oldFeature) return plan;
+
+  String migrateKey(String key) {
+    if (key == oldFeature) return newFeature;
+    final unitPrefix = '$oldFeature#';
+    return key.startsWith(unitPrefix)
+        ? '$newFeature#${key.substring(unitPrefix.length)}'
+        : key;
+  }
+
+  final tasks = [
+    for (final task in plan.tasks)
+      if (task.feature == oldFeature)
+        ClientTask(
+          id: task.id,
+          category: category,
+          title: title,
+          instructions: task.instructions,
+          order: task.order,
+          source: task.source,
+          templateTaskId: task.templateTaskId,
+          addedReason: task.addedReason,
+        )
+      else
+        task,
+  ];
+  return plan.copyWith(
+    features: [
+      for (final feature in plan.features)
+        if (feature == oldFeature) newFeature else feature,
+    ],
+    tasks: tasks,
+    completedFeatures: [
+      for (final feature in plan.completedFeatures)
+        if (feature == oldFeature) newFeature else feature,
+    ],
+    featureProgress: {
+      for (final entry in plan.featureProgress.entries)
+        migrateKey(entry.key): entry.value,
+    },
+    taskWorkflow: {
+      for (final entry in plan.taskWorkflow.entries)
+        migrateKey(entry.key): Map<String, dynamic>.from(entry.value),
+    },
+  );
+}
+
 TaskStatus taskStatus(Plan plan, String key) {
   final raw = currentTaskCycle(plan, key)['status']?.toString();
   if (raw == TaskStatus.completed.name) return TaskStatus.completed;

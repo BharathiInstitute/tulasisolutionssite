@@ -190,6 +190,9 @@ class _CreateTemplateDialogState extends State<_CreateTemplateDialog> {
     text: 'Hi {{1}}, welcome to Tulasi Solutions.',
   );
   final _footer = TextEditingController();
+  final _ctaUrl = TextEditingController();
+  final _ctaLabel = TextEditingController(text: 'Visit Website');
+  final _headerImageUrl = TextEditingController();
   String _category = 'marketing';
   String _language = 'en';
   bool _submitting = false;
@@ -200,6 +203,9 @@ class _CreateTemplateDialogState extends State<_CreateTemplateDialog> {
     _name.dispose();
     _body.dispose();
     _footer.dispose();
+    _ctaUrl.dispose();
+    _ctaLabel.dispose();
+    _headerImageUrl.dispose();
     super.dispose();
   }
 
@@ -211,6 +217,9 @@ class _CreateTemplateDialogState extends State<_CreateTemplateDialog> {
         name: _name.text.trim().toLowerCase(),
         body: _body.text.trim(),
         footer: _footer.text.trim(),
+        ctaUrl: _ctaUrl.text.trim(),
+        ctaLabel: _ctaLabel.text.trim(),
+        headerImageUrl: _headerImageUrl.text.trim(),
         category: _category,
         language: _language,
       );
@@ -262,6 +271,44 @@ class _CreateTemplateDialogState extends State<_CreateTemplateDialog> {
               validator: (value) => value == null || value.trim().isEmpty ? 'Message body is required' : null,
             ),
             TextFormField(controller: _footer, decoration: const InputDecoration(labelText: 'Footer (optional)')),
+            TextFormField(
+              controller: _headerImageUrl,
+              decoration: const InputDecoration(
+                labelText: 'Header image URL (optional)',
+                helperText: 'Public HTTPS image used in the WhatsApp template header.',
+              ),
+              validator: (value) {
+                final url = value?.trim() ?? '';
+                if (url.isEmpty) return null;
+                final uri = Uri.tryParse(url);
+                return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty
+                    ? null
+                    : 'Enter a valid HTTPS image URL';
+              },
+            ),
+            TextFormField(
+              controller: _ctaUrl,
+              decoration: const InputDecoration(labelText: 'CTA URL (optional)'),
+              validator: (value) {
+                final url = value?.trim() ?? '';
+                if (url.isEmpty) return null;
+                final uri = Uri.tryParse(url);
+                return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty
+                    ? null
+                    : 'Enter a valid HTTPS URL';
+              },
+            ),
+            TextFormField(
+              controller: _ctaLabel,
+              decoration: const InputDecoration(labelText: 'CTA button label'),
+              validator: (value) {
+                if (_ctaUrl.text.trim().isEmpty) return null;
+                final label = value?.trim() ?? '';
+                return label.isEmpty || label.length > 25
+                    ? 'Use 1-25 characters'
+                    : null;
+              },
+            ),
             const SizedBox(height: 12),
             Row(children: [
               Expanded(child: DropdownButtonFormField<String>(initialValue: _category, decoration: const InputDecoration(labelText: 'Category'), items: const [DropdownMenuItem(value: 'utility', child: Text('Utility')), DropdownMenuItem(value: 'marketing', child: Text('Marketing')), DropdownMenuItem(value: 'authentication', child: Text('Authentication'))], onChanged: (value) => setState(() => _category = value!))),

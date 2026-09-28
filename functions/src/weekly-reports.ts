@@ -72,7 +72,7 @@ export const publishWeeklyReports = onSchedule(
         periodStart,
         periodEnd,
         ...groups,
-        summary: "Your weekly progress report is ready in your client portal.",
+        summary: "Your weekly progress report is ready.",
         published: true,
         createdAt: new Date(),
         publishedAt: new Date(),

@@ -5,6 +5,55 @@ import 'package:tulasisolutionssite/core/tasks/task_workflow.dart';
 
 void main() {
   group('task workflow draft cycles', () {
+    test('renaming a task preserves metadata and workflow keys', () {
+      const oldFeature = 'Content: 2 reels';
+      final plan = Plan(
+        id: 'plan-1',
+        clientId: 'client-1',
+        type: PlanType.setup,
+        name: 'Starter',
+        price: 0,
+        features: const [oldFeature],
+        tasks: const [
+          ClientTask(
+            id: 'task-1',
+            category: 'Content',
+            title: '2 reels',
+            instructions: 'Keep this brief',
+            order: 0,
+            source: ClientTaskSource.customIncluded,
+            addedReason: 'Campaign',
+          ),
+        ],
+        completedFeatures: const [oldFeature],
+        featureProgress: const {oldFeature: 50},
+        taskWorkflow: const {
+          '$oldFeature#1': {'assignedTo': 'staff-1'},
+          '$oldFeature#2': {'priority': 'high'},
+        },
+        startDate: DateTime(2024, 1, 1),
+      );
+
+      final updated = renamePlanTask(
+        plan,
+        oldFeature,
+        category: 'Content / Video Kit',
+        title: '2 campaign reels',
+      );
+      const newFeature = 'Content / Video Kit: 2 campaign reels';
+
+      expect(updated.features, const [newFeature]);
+      expect(updated.completedFeatures, const [newFeature]);
+      expect(updated.featureProgress, const {newFeature: 50});
+      expect(updated.taskWorkflow.keys, const {
+        '$newFeature#1',
+        '$newFeature#2',
+      });
+      expect(updated.tasks.single.feature, newFeature);
+      expect(updated.tasks.single.instructions, 'Keep this brief');
+      expect(updated.tasks.single.addedReason, 'Campaign');
+    });
+
     test('archiving a task preserves its workflow details', () {
       const key = 'content#1';
       final plan = Plan(

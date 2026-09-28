@@ -8,11 +8,11 @@ import 'app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // Auto-negotiate long-polling vs streaming so proxies/antivirus that abort
-  // the default WebChannel connection don't break real-time list updates.
+  // Some operator networks allow the initial WebChannel request but stall it,
+  // which prevents auto-detection from switching transports before reads time out.
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
-    webExperimentalAutoDetectLongPolling: true,
+    webExperimentalForceLongPolling: true,
   );
   runApp(const ProviderScope(child: MyApp()));
 }

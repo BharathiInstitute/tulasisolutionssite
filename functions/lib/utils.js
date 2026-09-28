@@ -90,6 +90,7 @@ async function logOutboundMessage(opts) {
             channel: channel ?? "whatsapp",
             lastMessageAt: new Date(),
             lastMessage: content.substring(0, 100),
+            lastMessageDirection: "outbound",
             unreadCount: 0,
             status: "active",
             createdAt: new Date(),
@@ -116,6 +117,7 @@ async function logOutboundMessage(opts) {
     await convsCol.doc(convId).update({
         lastMessageAt: new Date(),
         lastMessage: content.substring(0, 100),
+        lastMessageDirection: "outbound",
     });
     logger.info(`[logOutboundMessage] Logged msg ${msgRef.id} in conv ${convId} for contact ${contactId}`);
     return msgRef.id;

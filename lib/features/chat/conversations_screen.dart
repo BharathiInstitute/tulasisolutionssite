@@ -17,6 +17,9 @@ import '../admin/client_list/client_list_screen.dart';
 import 'lead_csv.dart';
 import 'lead_csv_download.dart';
 import 'lead_csv_picker.dart';
+import 'send_error_explanation.dart';
+
+enum _ChatActivityFilter { inbox, unread, archived }
 
 class ConversationsScreen extends ConsumerStatefulWidget {
   const ConversationsScreen({super.key});
@@ -28,11 +31,29 @@ class ConversationsScreen extends ConsumerStatefulWidget {
 
 class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
   String _searchQuery = '';
+  _ChatActivityFilter _activityFilter = _ChatActivityFilter.inbox;
   ClientStage? _selectedFunnelStage;
   String? _selectedClosedReason;
-  final Set<String> _startingAutomation = {};
+  bool _showDueOnly = false;
   final Set<String> _createdFunnelPhones = {};
+  final Set<String> _selectedConversationKeys = {};
   bool _isTransferringLeads = false;
+  bool _isSendingBatch = false;
+  bool _isArchivingSelection = false;
+  bool _isBatchPaused = false;
+  bool _cancelBatchRequested = false;
+  int _batchSize = 50;
+  int _batchCompleted = 0;
+  int _batchTotal = 0;
+  String? _lastCampaignId;
+  int _lastClientRefreshConversationCount = -1;
+  Timer? _sendStatusRefreshTimer;
+
+  @override
+  void dispose() {
+    _sendStatusRefreshTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,16 +66,75 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     final whatsappConvs = conversations
         .where((c) => c.channel == ConversationChannel.whatsapp)
         .toList();
+    final archivedWhatsappConvs = chat.archivedConversations
+      .where((c) => c.channel == ConversationChannel.whatsapp)
+      .toList();
+    final clientsById = {for (final client in clients) client.id: client};
     final clientsByPhone = _indexClientsByPhone(clients);
+    final stageConversationCounts = <String, int>{
+      for (final stage in chatFunnelStages)
+      stage.name: whatsappConvs
+            .where((conversation) => conversationStage(conversation) == stage)
+        .length,
+    };
     final filteredConversations = _filterConversations(
       whatsappConvs,
+      clientsById,
       clientsByPhone,
     );
+    final filteredArchivedConversations = _filterConversations(
+      archivedWhatsappConvs,
+      clientsById,
+      clientsByPhone,
+    );
+    final displayedConversations =
+        _activityFilter == _ChatActivityFilter.archived
+        ? filteredArchivedConversations
+        : filteredConversations;
+    final readyConversations = filteredConversations.where((conversation) {
+      final client = _findConversationClient(
+        conversation,
+        clientsById,
+        clientsByPhone,
+      );
+      if (client?.doNotContact == true ||
+          isLeadSendInFlight(client?.lastSendStatus)) {
+        return false;
+      }
+      if (conversation.stage == ClientStage.reach.name) return true;
+      return _showDueOnly &&
+          client != null &&
+          client.stage != ClientStage.client &&
+          client.stage != ClientStage.retain &&
+          client.stage != ClientStage.lost &&
+          funnelReminderLabel(client, conversation.lastMessageAt).isDue;
+    }).toList();
+    final selectableConversationKeys = readyConversations
+        .map(conversationSelectionKey)
+        .toSet();
+    final campaignClients = _lastCampaignId == null
+        ? const <Client>[]
+        : clients
+              .where((client) => client.lastCampaignId == _lastCampaignId)
+              .toList();
 
     if (clientsAsync.hasValue) {
+      _scheduleSendStatusRefresh(clients);
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await _addChatsToFunnel(whatsappConvs, clients);
       });
+      final hasUnloadedOwners = whatsappConvs.any(
+        (conversation) =>
+            conversation.clientId.isNotEmpty &&
+            !clientsById.containsKey(conversation.clientId),
+      );
+      if (hasUnloadedOwners &&
+          _lastClientRefreshConversationCount != whatsappConvs.length) {
+        _lastClientRefreshConversationCount = whatsappConvs.length;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) ref.invalidate(clientsListProvider);
+        });
+      }
     }
 
     return AppShell(
@@ -119,8 +199,11 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
           ),
         IconButton(
           icon: const Icon(Icons.refresh),
-          tooltip: 'Refresh',
-          onPressed: () => chat.loadConversations(),
+          tooltip: 'Refresh leads and conversations',
+          onPressed: () {
+            ref.invalidate(clientsListProvider);
+            chat.loadConversations();
+          },
         ),
       ],
       floatingActionButton: FloatingActionButton(
@@ -128,9 +211,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         backgroundColor: const Color(0xFF25D366),
         child: const Icon(Icons.message),
       ),
-      body: chat.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : chat.error != null
+        body: chat.error != null && conversations.isEmpty
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -153,7 +234,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                   ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
-                    onPressed: () => chat.loadConversations(),
+                    onPressed: () => chat.loadConversations(
+                      stage: _selectedFunnelStage?.name,
+                    ),
                     icon: const Icon(Icons.refresh),
                     label: const Text('Retry'),
                   ),
@@ -162,51 +245,101 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             )
           : Column(
               children: [
+                if (chat.isLoading)
+                  const LinearProgressIndicator(minHeight: 2),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            label: Text('All (${whatsappConvs.length})'),
-                            selected: _selectedFunnelStage == null,
-                            onSelected: (_) => setState(() {
-                              _selectedFunnelStage = null;
-                              _selectedClosedReason = null;
-                            }),
-                          ),
-                        ),
-                        ...chatFunnelStages.map((stage) {
-                          final count = whatsappConvs.where((conversation) {
-                            final client =
-                                clientsByPhone[normalizePhone(
-                                  conversation.contactPhone,
-                                )];
-                            return client?.stage == stage;
-                          }).length;
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: FilterChip(
-                              avatar: Icon(
-                                stage == _selectedFunnelStage
-                                    ? Icons.check_circle
-                                    : Icons.circle_outlined,
-                                size: 17,
-                                color: _funnelStageColor(stage),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          SegmentedButton<_ChatActivityFilter>(
+                            segments: [
+                              ButtonSegment(
+                                value: _ChatActivityFilter.inbox,
+                                icon: const Icon(Icons.inbox_outlined),
+                                label: Text(
+                                  'Inbox (${whatsappConvs.length})',
+                                ),
                               ),
-                              label: Text('${stage.displayName} ($count)'),
-                              selected: _selectedFunnelStage == stage,
-                              onSelected: (selected) => setState(() {
-                                _selectedFunnelStage = selected ? stage : null;
+                              ButtonSegment(
+                                value: _ChatActivityFilter.unread,
+                                icon: const Icon(
+                                  Icons.mark_email_unread_outlined,
+                                ),
+                                label: Text('Unread (${chat.totalUnread})'),
+                              ),
+                              ButtonSegment(
+                                value: _ChatActivityFilter.archived,
+                                icon: const Icon(Icons.archive_outlined),
+                                label: Text(
+                                  'Archived (${archivedWhatsappConvs.length})',
+                                ),
+                              ),
+                            ],
+                            selected: {_activityFilter},
+                            onSelectionChanged: (selection) {
+                              setState(() {
+                                _activityFilter = selection.first;
+                                _showDueOnly = false;
+                                _selectedConversationKeys.clear();
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 12),
+                          SizedBox(
+                            width: 360,
+                            child: DropdownButtonFormField<ClientStage?>(
+                              initialValue: _selectedFunnelStage,
+                              decoration: const InputDecoration(
+                                labelText: 'Funnel',
+                                prefixIcon: Icon(Icons.filter_alt_outlined),
+                                isDense: true,
+                              ),
+                              items: [
+                                DropdownMenuItem<ClientStage?>(
+                                  value: null,
+                                  child: Text(
+                                    'Any stage (${whatsappConvs.length})',
+                                  ),
+                                ),
+                                ...[
+                                  ClientStage.click,
+                                  ...chatFunnelStages.where(
+                                    (stage) => stage != ClientStage.click,
+                                  ),
+                                ].map((stage) {
+                                  final count =
+                                      stageConversationCounts[stage.name];
+                                  return DropdownMenuItem<ClientStage?>(
+                                    value: stage,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.circle_outlined,
+                                          size: 17,
+                                          color: _funnelStageColor(stage),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${stage.displayName} (${count ?? 0})',
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ],
+                              onChanged: (stage) => setState(() {
+                                _selectedFunnelStage = stage;
                                 _selectedClosedReason = null;
+                                _showDueOnly = false;
                               }),
                             ),
-                          );
-                        }),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -280,17 +413,133 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                     ),
                   ),
                 ),
+                if (_selectedFunnelStage == ClientStage.reach || _showDueOnly)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _isSendingBatch || _isArchivingSelection
+                              ? null
+                              : () => _toggleReadySelection(readyConversations),
+                          icon: Icon(
+                            _selectedConversationKeys.isEmpty
+                                ? Icons.select_all
+                                : Icons.deselect,
+                          ),
+                          label: Text(
+                            _selectedConversationKeys.isEmpty
+                                ? 'Select up to $_batchSize'
+                                : 'Clear selection',
+                          ),
+                        ),
+                        Tooltip(
+                          message: 'Batch size',
+                          child: DropdownButton<int>(
+                            value: _batchSize,
+                            items: const [25, 50, 100]
+                                .map(
+                                  (size) => DropdownMenuItem(
+                                    value: size,
+                                    child: Text('$size per batch'),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: _isSendingBatch || _isArchivingSelection
+                                ? null
+                                : (value) => setState(() {
+                                    _batchSize = value ?? 50;
+                                    if (_selectedConversationKeys.length >
+                                        _batchSize) {
+                                      final retained = _selectedConversationKeys
+                                          .take(_batchSize)
+                                          .toSet();
+                                      _selectedConversationKeys
+                                        ..clear()
+                                        ..addAll(retained);
+                                    }
+                                  }),
+                          ),
+                        ),
+                        Text('${_selectedConversationKeys.length} selected'),
+                        if (_isSendingBatch) ...[
+                          Text('Queueing $_batchCompleted/$_batchTotal'),
+                          OutlinedButton.icon(
+                            onPressed: _toggleBatchPaused,
+                            icon: Icon(
+                              _isBatchPaused ? Icons.play_arrow : Icons.pause,
+                            ),
+                            label: Text(_isBatchPaused ? 'Resume' : 'Pause'),
+                          ),
+                          TextButton.icon(
+                            onPressed: _stopBatch,
+                            icon: const Icon(Icons.stop_circle_outlined),
+                            label: const Text('Stop'),
+                          ),
+                        ] else ...[
+                          OutlinedButton.icon(
+                            onPressed:
+                                _selectedConversationKeys.isEmpty ||
+                                    _isArchivingSelection
+                                ? null
+                                : () => _archiveSelected(readyConversations),
+                            icon: _isArchivingSelection
+                                ? const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.archive_outlined),
+                            label: const Text('Archive selected'),
+                          ),
+                          FilledButton.icon(
+                            onPressed:
+                                _selectedConversationKeys.isEmpty ||
+                                    _isArchivingSelection
+                                ? null
+                                : () => _sendSelectedBatch(
+                                    readyConversations,
+                                    clientsByPhone,
+                                  ),
+                            icon: const Icon(Icons.send_outlined),
+                            label: const Text('Send selected'),
+                          ),
+                        ],
+                        if (campaignClients.isNotEmpty)
+                          Text(_campaignSummary(campaignClients)),
+                      ],
+                    ),
+                  ),
                 Expanded(
                   child: _ConversationList(
-                    conversations: filteredConversations,
+                    conversations: displayedConversations,
                     emptyIcon: Icons.chat_bubble_outline,
-                    emptyText: 'No conversations in this funnel stage',
+                    emptyText: switch (_activityFilter) {
+                      _ChatActivityFilter.inbox => 'No conversations',
+                      _ChatActivityFilter.unread => 'No unread conversations',
+                      _ChatActivityFilter.archived =>
+                        'No archived conversations',
+                    },
                     channelColor: const Color(0xFF25D366),
-                    startingAutomation: _startingAutomation,
-                    onStartAutomation: _startAutomation,
                     clients: clients,
-                    onChangeStage: _changeClientStage,
+                    onChangeStage: _changeConversationStage,
                     onSetFollowUp: _showFollowUpSettings,
+                    selectionEnabled:
+                        _selectedFunnelStage == ClientStage.reach ||
+                        _showDueOnly,
+                    selectableConversationKeys: selectableConversationKeys,
+                    selectedConversationKeys: _selectedConversationKeys,
+                    onSelectionChanged: _setConversationSelected,
+                    hasMore: chat.hasMoreConversations,
+                    isLoadingMore: chat.isLoadingMore,
+                    onLoadMore: chat.loadMoreConversations,
+                    conversationsAreArchived:
+                      _activityFilter == _ChatActivityFilter.archived,
+                    onSetArchived: _setConversationArchived,
                   ),
                 ),
               ],
@@ -473,19 +722,48 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               );*/
   }
 
+  void _scheduleSendStatusRefresh(List<Client> clients) {
+    final hasInFlightSend = clients.any(
+      (client) => isLeadSendInFlight(client.lastSendStatus),
+    );
+    if (!hasInFlightSend) {
+      _sendStatusRefreshTimer?.cancel();
+      _sendStatusRefreshTimer = null;
+      return;
+    }
+    if (_sendStatusRefreshTimer?.isActive == true) return;
+    _sendStatusRefreshTimer = Timer(const Duration(seconds: 3), () {
+      _sendStatusRefreshTimer = null;
+      if (mounted) ref.invalidate(clientsListProvider);
+    });
+  }
+
   List<Conversation> _filterConversations(
     List<Conversation> conversations,
+    Map<String, Client> clientsById,
     Map<String, Client> clientsByPhone,
   ) {
     final q = _searchQuery.toLowerCase();
     return conversations.where((conversation) {
-      final client = clientsByPhone[normalizePhone(conversation.contactPhone)];
-      if (_selectedFunnelStage != null &&
-          client?.stage != _selectedFunnelStage) {
+      if (_activityFilter == _ChatActivityFilter.unread &&
+          conversation.unreadCount <= 0) {
         return false;
       }
+      if (_selectedFunnelStage != null &&
+          conversation.stage != _selectedFunnelStage!.name) {
+        return false;
+      }
+      final client = _findConversationClient(
+        conversation,
+        clientsById,
+        clientsByPhone,
+      );
       if (_selectedClosedReason != null &&
           client?.closedReason != _selectedClosedReason) {
+        return false;
+      }
+      if (_showDueOnly &&
+          !funnelReminderLabel(client, conversation.lastMessageAt).isDue) {
         return false;
       }
       return q.trim().isEmpty ||
@@ -493,6 +771,15 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
           conversation.contactPhone.contains(q) ||
           (conversation.lastMessage?.toLowerCase().contains(q) ?? false);
     }).toList();
+  }
+
+  Client? _findConversationClient(
+    Conversation conversation,
+    Map<String, Client> clientsById,
+    Map<String, Client> clientsByPhone,
+  ) {
+    final owner = clientsById[conversation.clientId];
+    return owner ?? clientsByPhone[normalizePhone(conversation.contactPhone)];
   }
 
   Map<String, Client> _indexClientsByPhone(List<Client> clients) {
@@ -525,6 +812,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     ClientStage.register => Colors.blue,
     ClientStage.consult => Colors.indigo,
     ClientStage.client => Colors.green,
+    ClientStage.retain => Colors.teal,
     ClientStage.lost => Colors.red,
     _ => Colors.grey,
   };
@@ -535,16 +823,23 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
 
     setState(() => _isTransferringLeads = true);
     try {
-      final source = utf8.decode(bytes);
-      final result = parseLeadCsv(source);
+      final result = parseLeadFile(bytes);
       final chat = ref.read(chatProvider);
-      final firestore = ref.read(firestoreServiceProvider);
       final knownNumbers = <String>{
         ...clients.map((client) => normalizeLeadNumber(client.contactPhone)),
         ...chat.conversations.map(
           (conversation) => normalizeLeadNumber(conversation.contactPhone),
         ),
       }..remove('');
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => _LeadImportPreviewDialog(
+          result: result,
+          knownNumbers: knownNumbers,
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      final firestore = ref.read(firestoreServiceProvider);
       final progress = ValueNotifier<_LeadImportProgress>(
         _LeadImportProgress(
           total:
@@ -575,6 +870,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
           final created = await firestore.createClientIfAbsent(
             Client(
               id: clientId,
+              clientCode: lead.code,
               name: lead.name,
               category: '',
               contactEmail: '',
@@ -647,6 +943,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
       final number = normalizeLeadNumber(client.contactPhone);
       if (number.isNotEmpty) {
         leadsByNumber[number] = LeadCsvRow(
+          code: client.clientCode,
           name: client.name,
           number: client.contactPhone,
         );
@@ -685,24 +982,263 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     }
   }
 
-  Future<void> _startAutomation(Conversation conversation) async {
-    setState(() => _startingAutomation.add(conversation.id));
-    try {
-      await ref.read(chatProvider).startQualificationAutomation(conversation);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Automation started for ${conversation.contactName}'),
+  void _toggleReadySelection(List<Conversation> conversations) {
+    setState(() {
+      if (_selectedConversationKeys.isNotEmpty) {
+        _selectedConversationKeys.clear();
+        return;
+      }
+      _selectedConversationKeys.addAll(
+        conversations.take(_batchSize).map(conversationSelectionKey),
+      );
+    });
+  }
+
+  void _setConversationSelected(Conversation conversation, bool selected) {
+    final key = conversationSelectionKey(conversation);
+    setState(() {
+      if (selected) {
+        if (_selectedConversationKeys.length >= _batchSize) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('This batch can contain up to $_batchSize leads.'),
+            ),
+          );
+          return;
+        }
+        _selectedConversationKeys.add(key);
+      } else {
+        _selectedConversationKeys.remove(key);
+      }
+    });
+  }
+
+  Future<void> _archiveSelected(List<Conversation> conversations) async {
+    final selected = conversations
+        .where(
+          (conversation) => _selectedConversationKeys.contains(
+            conversationSelectionKey(conversation),
+          ),
+        )
+        .take(_batchSize)
+        .toList();
+    if (selected.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Archive selected conversations?'),
+        content: Text(
+          '${selected.length} conversations will move to Archived.',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.archive_outlined),
+            label: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isArchivingSelection = true);
+    try {
+      await ref
+          .read(chatProvider)
+          .updateConversationsArchive(
+            conversations: selected,
+            isArchived: true,
+          );
+      if (!mounted) return;
+      setState(() => _selectedConversationKeys.clear());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${selected.length} conversations archived')),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not start automation: $error')),
+        SnackBar(content: Text('Could not archive selection: $error')),
       );
     } finally {
-      if (mounted) setState(() => _startingAutomation.remove(conversation.id));
+      if (mounted) setState(() => _isArchivingSelection = false);
     }
+  }
+
+  Future<void> _toggleBatchPaused() async {
+    final paused = !_isBatchPaused;
+    setState(() => _isBatchPaused = paused);
+    final campaignId = _lastCampaignId;
+    final msg91 = ref.read(chatProvider).msg91Service;
+    if (campaignId == null || msg91 == null) return;
+    try {
+      await msg91.updateOutreachCampaignStatus(
+        campaignId: campaignId,
+        status: paused ? 'paused' : 'running',
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _stopBatch() async {
+    setState(() {
+      _cancelBatchRequested = true;
+      _isBatchPaused = false;
+    });
+    final campaignId = _lastCampaignId;
+    final msg91 = ref.read(chatProvider).msg91Service;
+    if (campaignId == null || msg91 == null) return;
+    try {
+      await msg91.updateOutreachCampaignStatus(
+        campaignId: campaignId,
+        status: 'cancelled',
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _sendSelectedBatch(
+    List<Conversation> readyConversations,
+    Map<String, Client> clientsByPhone,
+  ) async {
+    final selected = readyConversations
+        .where(
+          (conversation) => _selectedConversationKeys.contains(
+            conversationSelectionKey(conversation),
+          ),
+        )
+        .take(_batchSize)
+        .toList();
+    if (selected.isEmpty) return;
+
+    final msg91 = ref.read(chatProvider).msg91Service;
+    if (msg91 == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Messaging service is unavailable.')),
+      );
+      return;
+    }
+
+    List<MessageTemplate> templates;
+    try {
+      templates = (await msg91.getTemplates(channel: 'whatsapp'))
+          .where(
+            (template) =>
+                template.status.toLowerCase() == 'approved' &&
+                template.content.trim().isNotEmpty,
+          )
+          .toList();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load approved templates: $error')),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final choice = await showDialog<_BatchTemplateChoice>(
+      context: context,
+      builder: (context) => _BatchTemplateDialog(
+        templates: templates,
+        recipientCount: selected.length,
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    setState(() {
+      _isSendingBatch = true;
+      _isBatchPaused = false;
+      _cancelBatchRequested = false;
+      _batchCompleted = 0;
+      _batchTotal = selected.length;
+    });
+
+    final campaignId = const Uuid().v4();
+    setState(() => _lastCampaignId = campaignId);
+    var queued = 0;
+    var failed = 0;
+    final queuedKeys = <String>{};
+    for (final conversation in selected) {
+      while (_isBatchPaused && !_cancelBatchRequested) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      if (_cancelBatchRequested) break;
+      try {
+        await ref
+            .read(chatProvider)
+            .sendTemplateToConversation(
+              conversation,
+              choice.template,
+              choice.valuesFor(conversation.contactName),
+              campaignId: campaignId,
+            );
+        queued++;
+        queuedKeys.add(conversationSelectionKey(conversation));
+      } catch (error) {
+        failed++;
+        final client =
+            clientsByPhone[normalizePhone(conversation.contactPhone)];
+        if (client != null) {
+          await ref
+              .read(firestoreServiceProvider)
+              .updateClient(
+                client.copyWith(
+                  lastSendStatus: 'failed',
+                  lastSendError: error.toString(),
+                  lastAttemptAt: DateTime.now(),
+                  sendAttemptCount: client.sendAttemptCount + 1,
+                  lastCampaignId: campaignId,
+                ),
+              );
+        }
+      } finally {
+        if (mounted) setState(() => _batchCompleted++);
+      }
+    }
+
+    try {
+      await msg91.updateOutreachCampaignStatus(
+        campaignId: campaignId,
+        status: _cancelBatchRequested ? 'cancelled' : 'completed',
+      );
+    } catch (_) {
+      // Queue results remain authoritative if campaign metadata fails.
+    }
+
+    ref.invalidate(clientsListProvider);
+    if (!mounted) return;
+    setState(() {
+      _isSendingBatch = false;
+      _isBatchPaused = false;
+      _selectedConversationKeys.removeAll(queuedKeys);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$queued queued${failed == 0 ? '' : ', $failed failed'}'),
+      ),
+    );
+  }
+
+  String _campaignSummary(List<Client> clients) {
+    int count(String status) =>
+        clients.where((client) => client.lastSendStatus == status).length;
+    final replied = clients
+        .where(
+          (client) => const {
+            ClientStage.register,
+            ClientStage.consult,
+            ClientStage.client,
+            ClientStage.retain,
+          }.contains(client.stage),
+        )
+        .length;
+    return 'Last batch: ${count('pending')} pending · '
+        '${count('retrying')} retrying · ${count('sent')} sent · '
+        '${count('delivered')} delivered · ${count('read')} read · '
+        '$replied replied · ${count('failed')} failed';
   }
 
   Future<void> _changeClientStage(Client client, ClientStage stage) async {
@@ -739,6 +1275,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         closedReason: closure.reason,
         closedSubReason: closure.subReason,
         closedNote: closure.note,
+        doNotContact: closure.reason == 'Opted Out',
         clearClosedDetails: true,
         clearFollowUp: true,
       );
@@ -773,11 +1310,18 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
 
     try {
       await ref.read(firestoreServiceProvider).updateClient(updatedClient);
+      await ref
+          .read(chatProvider)
+          .updateClientConversationFilters(
+            ownerClientId: client.id,
+            stage: updatedClient.stage.name,
+          );
 
       if (qualification != null) {
         await _sendPackageMessage(client, qualification);
       }
       ref.invalidate(clientsListProvider);
+        await ref.read(chatProvider).loadConversations();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -790,6 +1334,118 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not update funnel stage: $error')),
       );
+    }
+  }
+
+  Future<void> _changeConversationStage(
+    Conversation conversation,
+    Client? client,
+    ClientStage stage,
+  ) async {
+    var resolvedClient = client;
+    if (resolvedClient == null && conversation.clientId.isNotEmpty) {
+      resolvedClient = await ref
+          .read(firestoreServiceProvider)
+          .getClient(conversation.clientId);
+    }
+    if (!mounted) return;
+
+    if (resolvedClient != null) {
+      await _changeClientStage(resolvedClient, stage);
+      return;
+    }
+
+    final ownerClientId = conversation.clientId;
+    if (ownerClientId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Conversation cannot be linked.')),
+      );
+      return;
+    }
+
+    try {
+      await ref
+          .read(firestoreServiceProvider)
+          .createClient(
+            Client(
+              id: ownerClientId,
+              name: conversation.contactName.trim().isEmpty
+                  ? conversation.contactPhone
+                  : conversation.contactName.trim(),
+              ownerName: null,
+              category: '',
+              contactEmail: '',
+              contactPhone: conversation.contactPhone,
+              alternatePhone: null,
+              stage: stage,
+              createdDate: DateTime.now(),
+              stageChangedAt: DateTime.now(),
+            ),
+          );
+      await ref
+          .read(chatProvider)
+          .updateClientConversationFilters(
+            ownerClientId: ownerClientId,
+            stage: stage.name,
+          );
+      ref.invalidate(clientsListProvider);
+        await ref.read(chatProvider).loadConversations();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Linked to ${stage.displayName}')),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not link funnel stage: $error')),
+      );
+    }
+  }
+
+  Future<void> _setConversationArchived(
+    Conversation conversation,
+    Client? client,
+    bool isArchived,
+  ) async {
+    try {
+      final ownerClientId = conversation.clientId;
+      if (ownerClientId.isEmpty) {
+        throw StateError('Conversation is not linked to a lead');
+      }
+      await ref
+          .read(chatProvider)
+          .updateClientConversationArchive(
+            ownerClientId: ownerClientId,
+            conversation: conversation,
+            isArchived: isArchived,
+          );
+      if (mounted) {
+        setState(() {
+          _selectedClosedReason = null;
+          _showDueOnly = false;
+          _selectedConversationKeys.clear();
+        });
+      }
+      ref.invalidate(clientsListProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 1),
+            content: Text(
+              isArchived
+                  ? '${conversation.contactName} archived'
+                  : '${conversation.contactName} restored',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update archive: $error')),
+        );
+      }
     }
   }
 
@@ -923,10 +1579,17 @@ class _ConversationList extends StatelessWidget {
   final IconData emptyIcon;
   final String emptyText;
   final Color channelColor;
-  final Set<String> startingAutomation;
-  final Future<void> Function(Conversation) onStartAutomation;
-  final Future<void> Function(Client, ClientStage) onChangeStage;
+  final Future<void> Function(Conversation, Client?, ClientStage) onChangeStage;
   final Future<void> Function(Client) onSetFollowUp;
+  final bool selectionEnabled;
+  final Set<String> selectableConversationKeys;
+  final Set<String> selectedConversationKeys;
+  final void Function(Conversation, bool) onSelectionChanged;
+  final bool hasMore;
+  final bool isLoadingMore;
+  final Future<void> Function() onLoadMore;
+  final bool conversationsAreArchived;
+  final Future<void> Function(Conversation, Client?, bool) onSetArchived;
 
   const _ConversationList({
     required this.conversations,
@@ -934,10 +1597,17 @@ class _ConversationList extends StatelessWidget {
     required this.emptyIcon,
     required this.emptyText,
     required this.channelColor,
-    required this.startingAutomation,
-    required this.onStartAutomation,
     required this.onChangeStage,
     required this.onSetFollowUp,
+    required this.selectionEnabled,
+    required this.selectableConversationKeys,
+    required this.selectedConversationKeys,
+    required this.onSelectionChanged,
+    required this.hasMore,
+    required this.isLoadingMore,
+    required this.onLoadMore,
+    required this.conversationsAreArchived,
+    required this.onSetArchived,
   });
 
   @override
@@ -969,25 +1639,59 @@ class _ConversationList extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
-      itemCount: conversations.length,
-      itemBuilder: (context, i) {
-        final c = conversations[i];
-        return _ConversationTile(
-          conversation: c,
-          client: _findClient(c),
-          channelColor: channelColor,
-          isStartingAutomation: startingAutomation.contains(c.id),
-          onStartAutomation: () => onStartAutomation(c),
-          onChangeStage: onChangeStage,
-          onSetFollowUp: onSetFollowUp,
-        );
+    return NotificationListener<ScrollEndNotification>(
+      onNotification: (notification) {
+        if (hasMore &&
+            !isLoadingMore &&
+            notification.metrics.extentAfter < 300) {
+          onLoadMore();
+        }
+        return false;
       },
+      child: ListView.builder(
+        itemCount: conversations.length + 1,
+        itemBuilder: (context, i) {
+          if (i == conversations.length) {
+            if (hasMore && !isLoadingMore) {
+              WidgetsBinding.instance.addPostFrameCallback((_) => onLoadMore());
+            }
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: isLoadingMore
+                    ? const CircularProgressIndicator()
+                    : hasMore
+                    ? const SizedBox(height: 24)
+                    : const Text('End of conversations'),
+              ),
+            );
+          }
+          final c = conversations[i];
+          return _ConversationTile(
+            conversation: c,
+            client: _findClient(c),
+            channelColor: channelColor,
+            onChangeStage: onChangeStage,
+            onSetFollowUp: onSetFollowUp,
+            selectionEnabled:
+                selectionEnabled &&
+                selectableConversationKeys.contains(
+                  conversationSelectionKey(c),
+                ),
+            selected: selectedConversationKeys.contains(
+              conversationSelectionKey(c),
+            ),
+            onSelectionChanged: (selected) => onSelectionChanged(c, selected),
+            onSetArchived: onSetArchived,
+            archived: conversationsAreArchived,
+          );
+        },
+      ),
     );
   }
 
   Client? _findClient(Conversation conversation) =>
-      findClientByPhone(conversation.contactPhone, clients);
+      findClientForConversation(conversation, clients);
 }
 
 String normalizePhone(String value) {
@@ -995,6 +1699,12 @@ String normalizePhone(String value) {
   if (digits.length < 10) return '';
   return digits.substring(digits.length - 10);
 }
+
+String conversationSelectionKey(Conversation conversation) =>
+    '${conversation.clientId}/${conversation.id}';
+
+bool isLeadSendInFlight(String? status) =>
+    status == 'pending' || status == 'sending' || status == 'retrying';
 
 Client? findClientByPhone(String phone, List<Client> clients) {
   final normalizedPhone = normalizePhone(phone);
@@ -1004,6 +1714,26 @@ Client? findClientByPhone(String phone, List<Client> clients) {
       .where((client) => normalizePhone(client.contactPhone) == normalizedPhone)
       .toList();
   return matches.length == 1 ? matches.single : null;
+}
+
+Client? findClientForConversation(
+  Conversation conversation,
+  List<Client> clients,
+) {
+  if (conversation.clientId.isNotEmpty) {
+    for (final client in clients) {
+      if (client.id == conversation.clientId) return client;
+    }
+  }
+  return findClientByPhone(conversation.contactPhone, clients);
+}
+
+ClientStage conversationStage(Conversation conversation) {
+  if (conversation.stage == 'refer') return ClientStage.retain;
+  for (final stage in chatFunnelStages) {
+    if (stage.name == conversation.stage) return stage;
+  }
+  return ClientStage.click;
 }
 
 String formatConversationTimestamp(DateTime? dt, {DateTime? now}) {
@@ -1054,19 +1784,25 @@ class _ConversationTile extends StatelessWidget {
   final Conversation conversation;
   final Client? client;
   final Color channelColor;
-  final bool isStartingAutomation;
-  final Future<void> Function() onStartAutomation;
-  final Future<void> Function(Client, ClientStage) onChangeStage;
+  final Future<void> Function(Conversation, Client?, ClientStage) onChangeStage;
   final Future<void> Function(Client) onSetFollowUp;
+  final Future<void> Function(Conversation, Client?, bool) onSetArchived;
+  final bool archived;
+  final bool selectionEnabled;
+  final bool selected;
+  final ValueChanged<bool> onSelectionChanged;
 
   const _ConversationTile({
     required this.conversation,
     required this.client,
     required this.channelColor,
-    required this.isStartingAutomation,
-    required this.onStartAutomation,
     required this.onChangeStage,
     required this.onSetFollowUp,
+    required this.onSetArchived,
+    required this.archived,
+    required this.selectionEnabled,
+    required this.selected,
+    required this.onSelectionChanged,
   });
 
   @override
@@ -1074,6 +1810,7 @@ class _ConversationTile extends StatelessWidget {
     final theme = Theme.of(context);
     final c = conversation;
     final hasUnread = c.unreadCount > 0;
+    final displayedStage = conversationStage(c);
 
     return InkWell(
       onTap: () => context.push('/chat/${c.id}', extra: c),
@@ -1087,6 +1824,13 @@ class _ConversationTile extends StatelessWidget {
         ),
         child: Row(
           children: [
+            if (selectionEnabled) ...[
+              Checkbox(
+                value: selected,
+                onChanged: (value) => onSelectionChanged(value ?? false),
+              ),
+              const SizedBox(width: 4),
+            ],
             // Avatar
             Stack(
               children: [
@@ -1185,39 +1929,42 @@ class _ConversationTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (client != null) ...[
-                        const SizedBox(width: 8),
-                        PopupMenuButton<ClientStage>(
-                          tooltip: 'Change funnel stage',
-                          onSelected: (stage) => onChangeStage(client!, stage),
-                          itemBuilder: (context) => chatFunnelStages
-                              .map(
-                                (stage) => PopupMenuItem(
-                                  value: stage,
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        stage == client!.stage
-                                            ? Icons.check_circle
-                                            : Icons.circle_outlined,
-                                        size: 18,
-                                        color: _stageColor(stage),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(stage.displayName),
-                                    ],
-                                  ),
+                      const SizedBox(width: 8),
+                      PopupMenuButton<ClientStage>(
+                        tooltip: client == null
+                            ? 'Link to funnel stage'
+                            : 'Change funnel stage',
+                        onSelected: (stage) =>
+                            onChangeStage(conversation, client, stage),
+                        itemBuilder: (context) => chatFunnelStages
+                            .map(
+                              (stage) => PopupMenuItem(
+                                value: stage,
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      stage == displayedStage
+                                          ? Icons.check_circle
+                                          : Icons.circle_outlined,
+                                      size: 18,
+                                      color: _stageColor(stage),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(stage.displayName),
+                                  ],
                                 ),
-                              )
-                              .toList(),
-                          child: StageChip(
-                            label: client!.stage.displayName,
-                            backgroundColor: _stageColor(
-                              client!.stage,
-                            ).withValues(alpha: 0.2),
-                            textColor: _stageColor(client!.stage),
-                          ),
+                              ),
+                            )
+                            .toList(),
+                        child: StageChip(
+                          label: displayedStage.displayName,
+                          backgroundColor: _stageColor(
+                            displayedStage,
+                          ).withValues(alpha: 0.2),
+                          textColor: _stageColor(displayedStage),
                         ),
+                      ),
+                      if (client != null)
                         IconButton(
                           tooltip: client!.followUpAt == null
                               ? 'Set follow-up'
@@ -1233,7 +1980,19 @@ class _ConversationTile extends StatelessWidget {
                             size: 20,
                           ),
                         ),
-                      ],
+                      IconButton(
+                        tooltip: archived
+                            ? 'Restore conversation'
+                            : 'Archive conversation',
+                        onPressed: () =>
+                            onSetArchived(conversation, client, !archived),
+                        icon: Icon(
+                          archived
+                              ? Icons.unarchive_outlined
+                              : Icons.archive_outlined,
+                          size: 20,
+                        ),
+                      ),
                       if (hasUnread)
                         Semantics(
                           label:
@@ -1269,6 +2028,11 @@ class _ConversationTile extends StatelessWidget {
                       lastActivityAt: c.lastMessageAt,
                     ),
                   ],
+                  if (client?.stage == ClientStage.reach &&
+                      client?.lastSendStatus != null) ...[
+                    const SizedBox(height: 4),
+                    _LeadSendStatus(client: client!),
+                  ],
                 ],
               ),
             ),
@@ -1283,24 +2047,6 @@ class _ConversationTile extends StatelessWidget {
                   Icons.phone_in_talk_outlined,
                   color: Color(0xFF16863E),
                 ),
-              ),
-            ),
-            SizedBox(
-              width: 40,
-              height: 40,
-              child: IconButton(
-                tooltip: 'Start automation test',
-                onPressed: isStartingAutomation ? null : onStartAutomation,
-                icon: isStartingAutomation
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        Icons.play_circle_outline_rounded,
-                        color: channelColor,
-                      ),
               ),
             ),
           ],
@@ -1334,7 +2080,6 @@ class _ConversationTile extends StatelessWidget {
     ClientStage.followUp => Colors.purple,
     ClientStage.client => Colors.green,
     ClientStage.retain => Colors.teal,
-    ClientStage.refer => Colors.pink,
     ClientStage.lost => Colors.red,
   };
 
@@ -1418,6 +2163,257 @@ class FunnelReminder {
   const FunnelReminder(this.label, {this.isDue = false});
 }
 
+class _LeadSendStatus extends StatelessWidget {
+  final Client client;
+
+  const _LeadSendStatus({required this.client});
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = client.lastSendStatus == 'failed';
+    final retrying = client.lastSendStatus == 'retrying';
+    final explanation = failed || retrying
+        ? explainSendError(client.lastSendError)
+        : null;
+    final color = failed ? Theme.of(context).colorScheme.error : Colors.orange;
+    final label = failed
+        ? 'Not sent: ${explanation!.title}. Tap for details.'
+        : retrying
+        ? 'Retry pending: ${explanation!.title}. Tap for details.'
+        : client.lastSendStatus == 'pending'
+        ? 'Queued for sending'
+        : 'Last send: ${client.lastSendStatus}';
+    return Row(
+      children: [
+        Icon(
+          failed ? Icons.error_outline : Icons.schedule_send_outlined,
+          size: 15,
+          color: color,
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: explanation == null
+              ? Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: color, fontSize: 12),
+                )
+              : InkWell(
+                  onTap: () =>
+                      showSendErrorExplanationDialog(context, explanation),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 12,
+                        decoration: TextDecoration.underline,
+                        decorationColor: color,
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+        if (client.sendAttemptCount > 0)
+          Text(
+            'Attempt ${client.sendAttemptCount}',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+      ],
+    );
+  }
+}
+
+class _BatchTemplateChoice {
+  final MessageTemplate template;
+  final List<String> parameterValues;
+  final bool personalizeFirstParameter;
+
+  const _BatchTemplateChoice({
+    required this.template,
+    required this.parameterValues,
+    required this.personalizeFirstParameter,
+  });
+
+  List<String> valuesFor(String contactName) {
+    final values = [...parameterValues];
+    if (personalizeFirstParameter && values.isNotEmpty) {
+      values[0] = contactName.trim().isEmpty ? 'there' : contactName.trim();
+    }
+    return values;
+  }
+}
+
+class _BatchTemplateDialog extends StatefulWidget {
+  final List<MessageTemplate> templates;
+  final int recipientCount;
+
+  const _BatchTemplateDialog({
+    required this.templates,
+    required this.recipientCount,
+  });
+
+  @override
+  State<_BatchTemplateDialog> createState() => _BatchTemplateDialogState();
+}
+
+class _BatchTemplateDialogState extends State<_BatchTemplateDialog> {
+  MessageTemplate? _selectedTemplate;
+  List<TextEditingController> _parameterControllers = [];
+  bool _personalizeFirstParameter = true;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.templates.isNotEmpty) _selectTemplate(widget.templates.first);
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _parameterControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  List<int> _parameterNumbers(MessageTemplate template) {
+    final numbers =
+        RegExp(r'\{\{(\d+)\}\}')
+            .allMatches(template.content)
+            .map((match) => int.parse(match.group(1)!))
+            .toSet()
+            .toList()
+          ..sort();
+    return numbers;
+  }
+
+  void _selectTemplate(MessageTemplate template) {
+    for (final controller in _parameterControllers) {
+      controller.dispose();
+    }
+    _selectedTemplate = template;
+    _parameterControllers = [
+      for (final _ in _parameterNumbers(template)) TextEditingController(),
+    ];
+  }
+
+  void _submit() {
+    final template = _selectedTemplate;
+    if (template == null) return;
+    final values = _parameterControllers
+        .map((controller) => controller.text.trim())
+        .toList();
+    final firstSharedIndex = _personalizeFirstParameter ? 1 : 0;
+    if (values.skip(firstSharedIndex).any((value) => value.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fill every shared template variable.')),
+      );
+      return;
+    }
+    Navigator.pop(
+      context,
+      _BatchTemplateChoice(
+        template: template,
+        parameterValues: values,
+        personalizeFirstParameter:
+            _personalizeFirstParameter && values.isNotEmpty,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final template = _selectedTemplate;
+    final parameterNumbers = template == null
+        ? const <int>[]
+        : _parameterNumbers(template);
+    return AlertDialog(
+      title: Text('Send to ${widget.recipientCount} selected leads'),
+      content: SizedBox(
+        width: 520,
+        child: widget.templates.isEmpty
+            ? const Text('No approved WhatsApp templates are available.')
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DropdownButtonFormField<MessageTemplate>(
+                      initialValue: template,
+                      decoration: const InputDecoration(
+                        labelText: 'Approved template',
+                      ),
+                      items: widget.templates
+                          .map(
+                            (item) => DropdownMenuItem(
+                              value: item,
+                              child: Text(item.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _selectTemplate(value));
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    if (template != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
+                        child: Text(template.content),
+                      ),
+                    if (parameterNumbers.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Use restaurant name for {{1}}'),
+                        value: _personalizeFirstParameter,
+                        onChanged: (value) =>
+                            setState(() => _personalizeFirstParameter = value),
+                      ),
+                      for (
+                        var index = 0;
+                        index < parameterNumbers.length;
+                        index++
+                      )
+                        if (index != 0 || !_personalizeFirstParameter)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: TextField(
+                              controller: _parameterControllers[index],
+                              decoration: InputDecoration(
+                                labelText:
+                                    'Value for {{${parameterNumbers[index]}}}',
+                              ),
+                            ),
+                          ),
+                    ],
+                  ],
+                ),
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: template == null ? null : _submit,
+          icon: const Icon(Icons.send_outlined),
+          label: const Text('Queue batch'),
+        ),
+      ],
+    );
+  }
+}
+
 FunnelReminder funnelReminderLabel(
   Client? client,
   DateTime? lastActivityAt, {
@@ -1427,6 +2423,17 @@ FunnelReminder funnelReminderLabel(
   final current = now ?? DateTime.now();
   final since = client.stageChangedAt ?? lastActivityAt ?? client.createdDate;
   final days = current.difference(since).inDays;
+  if (client.followUpAt != null) {
+    final daysUntilFollowUp = client.followUpAt!.difference(current).inDays;
+    if (client.followUpAt!.isBefore(current)) {
+      return const FunnelReminder('Follow-up due', isDue: true);
+    }
+    return FunnelReminder(
+      daysUntilFollowUp <= 0
+          ? 'Follow-up today'
+          : 'Follow-up in $daysUntilFollowUp day${daysUntilFollowUp == 1 ? '' : 's'}',
+    );
+  }
   if (client.stage == ClientStage.click) {
     if (days >= 8) {
       return const FunnelReminder('Ready to close: No Response', isDue: true);
@@ -1450,22 +2457,11 @@ FunnelReminder funnelReminderLabel(
     }
     return FunnelReminder('Package follow-up on day ${3 - days}');
   }
-  if (client.followUpAt != null) {
-    final daysUntilFollowUp = client.followUpAt!.difference(current).inDays;
-    if (client.followUpAt!.isBefore(current)) {
-      return const FunnelReminder('Follow-up due', isDue: true);
-    }
-    return FunnelReminder(
-      daysUntilFollowUp <= 0
-          ? 'Follow-up today'
-          : 'Follow-up in $daysUntilFollowUp day${daysUntilFollowUp == 1 ? '' : 's'}',
-    );
-  }
   if (client.stage == ClientStage.register) {
     return const FunnelReminder('Call now or set next call', isDue: true);
   }
   if (client.stage == ClientStage.reach) {
-    return const FunnelReminder('Ready to send');
+    return const FunnelReminder('Ready Agent Call');
   }
   if (client.stage == ClientStage.client) return const FunnelReminder('Won');
   if (client.stage == ClientStage.lost) {
@@ -1719,6 +2715,106 @@ class _CloseLeadDialogState extends State<_CloseLeadDialog> {
       ),
     ],
   );
+}
+
+class _LeadImportPreviewDialog extends StatelessWidget {
+  final LeadCsvImportResult result;
+  final Set<String> knownNumbers;
+
+  const _LeadImportPreviewDialog({
+    required this.result,
+    required this.knownNumbers,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final existing = result.leads
+        .where(
+          (lead) => knownNumbers.contains(normalizeLeadNumber(lead.number)),
+        )
+        .toList();
+    final newLeadCount = result.leads.length - existing.length;
+    return AlertDialog(
+      title: const Text('Review lead import'),
+      content: SizedBox(
+        width: 620,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 16,
+                runSpacing: 8,
+                children: [
+                  Text('${result.leads.length} valid'),
+                  Text('${result.duplicateRows} duplicates'),
+                  Text('${result.invalidRows} invalid'),
+                  Text('${existing.length} already imported'),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text('Preview', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 6),
+              for (final lead in result.leads.take(8))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Text('${lead.name}  ·  ${lead.number}'),
+                ),
+              if (result.leads.length > 8)
+                Text('and ${result.leads.length - 8} more valid leads'),
+              if (existing.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Already in the system',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 6),
+                for (final lead in existing.take(8))
+                  Text('${lead.name}  ·  ${lead.number}'),
+                if (existing.length > 8)
+                  Text('and ${existing.length - 8} more existing leads'),
+              ],
+              if (result.issues.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Rows requiring attention',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 6),
+                for (final issue in result.issues.take(8))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Text(
+                      'Row ${issue.rowNumber}: ${issue.reason}'
+                      '${issue.number.isEmpty ? '' : ' · ${issue.number}'}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                if (result.issues.length > 8)
+                  Text('and ${result.issues.length - 8} more issues'),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: newLeadCount == 0
+              ? null
+              : () => Navigator.pop(context, true),
+          icon: const Icon(Icons.upload_file_outlined),
+          label: Text('Import $newLeadCount new leads'),
+        ),
+      ],
+    );
+  }
 }
 
 class _LeadImportProgress {

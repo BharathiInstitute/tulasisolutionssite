@@ -3,7 +3,7 @@
  * Handles all WhatsApp message sending via MSG91's official BSP APIs.
  */
 
-import { sendRequest, MSG91_WA_URL, MSG91_BASE_URL, getWhatsAppIntegratedNumber, getClientWhatsAppNumber } from "./msg91-client";
+import { sendRequest, MSG91_WA_URL, MSG91_BASE_URL, getWhatsAppIntegratedNumber, getClientWhatsAppNumber, uploadWhatsAppSampleMedia } from "./msg91-client";
 import * as logger from "firebase-functions/logger";
 
 // ── Types ────────────────────────────────────────────────────
@@ -18,6 +18,10 @@ export interface WhatsAppTemplateMessage {
   language?: string;
   bodyParams?: TemplateParam[];
   headerParams?: TemplateParam[];
+  buttonParams?: Array<{
+    index: number;
+    value: string;
+  }>;
   integratedNumber?: string;
 }
 
@@ -123,6 +127,14 @@ export async function sendWhatsAppMessage(
       })),
     });
   }
+  if (msg.buttonParams && msg.buttonParams.length > 0) {
+    components.push(...msg.buttonParams.map((param) => ({
+      type: "button",
+      sub_type: "url",
+      index: String(param.index),
+      parameters: [{ type: "text", text: param.value }],
+    })));
+  }
 
   const payload = {
     integrated_number: integratedNumber,
@@ -189,18 +201,21 @@ export async function sendWhatsAppMedia(
 ): Promise<{ success: boolean; requestId?: string }> {
   const integratedNumber = msg.integratedNumber ?? getWhatsAppIntegratedNumber();
   const mediaType = msg.mediaType ?? "image";
-  const mediaPayload = mediaType === "audio" || mediaType === "sticker"
-    ? { link: msg.mediaUrl }
-    : { link: msg.mediaUrl, caption: msg.caption };
 
   const payload = {
     integrated_number: integratedNumber,
     content_type: mediaType,
     recipient_number: msg.to,
     type: mediaType,
-    [mediaType]: mediaPayload,
+    attachment_url: msg.mediaUrl,
+    ...(msg.caption && mediaType !== "audio" && mediaType !== "sticker"
+      ? { caption: msg.caption }
+      : {}),
   };
 
+  logger.info(
+    `sendWhatsAppMedia: type=${mediaType} recipient=${msg.to} hasAttachment=true`,
+  );
   const result = await sendRequest<Record<string, unknown>>(
     `${MSG91_WA_URL}/whatsapp-outbound-message/`,
     payload,
@@ -247,9 +262,15 @@ export async function submitTemplateForApproval(opts: {
   category: string;
   language: string;
   footer?: string;
+  ctaUrl?: string;
+  ctaLabel?: string;
+  headerImageUrl?: string;
   integratedNumber?: string;
 }): Promise<{ success: boolean; templateId?: string; message?: string }> {
   const integratedNumber = opts.integratedNumber ?? getWhatsAppIntegratedNumber();
+  const headerHandle = opts.headerImageUrl
+    ? await uploadWhatsAppSampleMedia(opts.headerImageUrl, integratedNumber)
+    : null;
 
   // Extract variable count from body ({{1}}, {{2}}, etc.)
   const varMatches = opts.body.match(/\{\{(\d+)\}\}/g) ?? [];
@@ -260,6 +281,13 @@ export async function submitTemplateForApproval(opts: {
 
   // Build components array per MSG91 format
   const components: Record<string, unknown>[] = [
+    ...(headerHandle
+      ? [{
+          type: "HEADER",
+          format: "IMAGE",
+          example: { header_handle: [headerHandle] },
+        }]
+      : []),
     {
       type: "BODY",
       text: opts.body,
@@ -271,6 +299,16 @@ export async function submitTemplateForApproval(opts: {
 
   if (opts.footer) {
     components.push({ type: "FOOTER", text: opts.footer });
+  }
+  if (opts.ctaUrl) {
+    components.push({
+      type: "BUTTONS",
+      buttons: [{
+        type: "URL",
+        text: opts.ctaLabel ?? "Visit Website",
+        url: opts.ctaUrl,
+      }],
+    });
   }
 
   const payload = {

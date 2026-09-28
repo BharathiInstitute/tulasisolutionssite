@@ -6,7 +6,7 @@
 import { onCall, HttpsError, CallableRequest } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
-import { DocumentReference } from "firebase-admin/firestore";
+import { DocumentReference, FieldValue } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import {
   db,
@@ -33,10 +33,13 @@ interface EnqueueRequest {
   mediaType?: string;
   templateName?: string;
   templateParams?: Array<{type: string; value: string}> | Record<string, string>;
+  templateHeaderImageUrl?: string;
+  templateButtonParams?: Record<string, string>;
   flowId?: string;
   voiceFlowId?: string;
   conversationId?: string;
   messageDocId?: string;
+  campaignId?: string;
 }
 
 function formatFailureReason(unknownError: unknown): string {
@@ -48,6 +51,49 @@ function formatFailureReason(unknownError: unknown): string {
     ? message.substring(0, message.indexOf(detailsMarker))
     : message;
   return concise.replace(/^MSG91 error \[\d+\]:\s*/, "").trim();
+}
+
+const DEFAULT_DAILY_OUTREACH_LIMIT = 100;
+
+function outreachDayKey(date = new Date()): string {
+  return date.toISOString().substring(0, 10);
+}
+
+async function recordCampaignOutcome(
+  campaignId: string | undefined,
+  status: "sent" | "delivered" | "read" | "failed",
+): Promise<void> {
+  if (!campaignId) return;
+  try {
+    await db.collection("outreach_campaigns").doc(campaignId).update({
+      [`stats.${status}`]: FieldValue.increment(1),
+      updatedAt: new Date(),
+    });
+  } catch (error) {
+    logger.warn(`Could not update campaign ${campaignId} ${status} count`, error);
+  }
+}
+
+async function campaignAllowsSending(
+  campaignId: string | undefined,
+): Promise<boolean> {
+  if (!campaignId) return true;
+  const snapshot = await db.collection("outreach_campaigns").doc(campaignId).get();
+  return !["paused", "cancelled"].includes(String(snapshot.data()?.status));
+}
+
+async function leadAllowsMessaging(
+  clientId: string,
+  queueMessageRef: DocumentReference,
+): Promise<boolean> {
+  const clientSnapshot = await db.collection(Collections.clients).doc(clientId).get();
+  if (clientSnapshot.data()?.doNotContact !== true) return true;
+  await queueMessageRef.update({
+    status: "cancelled",
+    error: "Lead opted out of messaging",
+    cancelledAt: new Date(),
+  });
+  return false;
 }
 
 async function resolveEnqueueClientId(
@@ -124,6 +170,8 @@ export const processMessageQueue = onSchedule(
         const scheduledAt = data.scheduledAt?.toDate?.() as Date | undefined;
 
         if (scheduledAt && scheduledAt > new Date()) continue;
+        if (!await campaignAllowsSending(data.campaignId)) continue;
+        if (!await leadAllowsMessaging(clientId, doc.ref)) continue;
 
         if (retries >= 3) {
           await doc.ref.update({
@@ -131,6 +179,13 @@ export const processMessageQueue = onSchedule(
             failedAt: new Date(),
             error: "Max retries exceeded",
           });
+          await db.collection(Collections.clients).doc(clientId).set({
+            lastSendStatus: "failed",
+            lastSendError: data.lastError ?? "Maximum retries exceeded",
+            lastAttemptAt: new Date(),
+            lastCampaignId: data.campaignId ?? null,
+          }, { merge: true });
+          await recordCampaignOutcome(data.campaignId, "failed");
 
           // SMS fallback: if WhatsApp failed and no prior fallback attempted
           if (channel === "whatsapp" && !data.smsFallbackOf) {
@@ -157,6 +212,13 @@ export const processMessageQueue = onSchedule(
             status: "failed",
             error: "No phone number found",
           });
+          await db.collection(Collections.clients).doc(clientId).set({
+            lastSendStatus: "failed",
+            lastSendError: "No phone number found",
+            lastAttemptAt: new Date(),
+            lastCampaignId: data.campaignId ?? null,
+          }, { merge: true });
+          await recordCampaignOutcome(data.campaignId, "failed");
           continue;
         }
 
@@ -224,6 +286,10 @@ export const processMessageQueue = onSchedule(
                 templateName: data.templateName,
                 language: templateLanguage,
                 bodyParams: bodyParams as TemplateParam[],
+                headerParams: data.templateHeaderImageUrl
+                  ? [{ type: "image", value: data.templateHeaderImageUrl }]
+                  : undefined,
+                buttonParams: data.templateButtonParams,
                 integratedNumber: clientWaNumber,
               });
             } else if (data.mediaUrl) {
@@ -232,6 +298,7 @@ export const processMessageQueue = onSchedule(
                 mediaUrl: data.mediaUrl,
                 caption: data.content,
                 integratedNumber: clientWaNumber,
+                mediaType: data.mediaType as "image" | "video" | "document" | "audio" | "sticker",
               });
             } else {
               result = await msg91Whatsapp.sendWhatsAppText({
@@ -257,64 +324,55 @@ export const processMessageQueue = onSchedule(
             await msg91Voice.makeVoiceCall(normalizedPhone, voiceFlowId);
           }
 
+          const sentAt = new Date();
           await doc.ref.update({
             status: "sent",
-            sentAt: new Date(),
+            sentAt,
+            lastError: FieldValue.delete(),
+            error: FieldValue.delete(),
             ...(msg91RequestId ? { msg91RequestId } : {}),
           });
+          const conversationId = data.conversationId as string | undefined;
+          if (conversationId) {
+            await db.doc(
+              `${clientCol(clientId, Collections.conversations)}/${conversationId}`
+            ).set({
+              lastMessage: String(data.content ?? ""),
+              lastMessageAt: sentAt,
+              lastMessageDirection: "outbound",
+            }, { merge: true });
+          }
+          const clientRef = db.collection(Collections.clients).doc(clientId);
+          const clientSnapshot = await clientRef.get();
+          await clientRef.set({
+            lastSendStatus: "sent",
+            lastSendError: null,
+            lastAttemptAt: new Date(),
+            lastCampaignId: data.campaignId ?? null,
+            ...(clientSnapshot.data()?.stage === "reach" ? {
+              stage: "click",
+              stageChangedAt: new Date(),
+              followUpAt: null,
+              followUpNotes: null,
+            } : {}),
+          }, { merge: true });
+          await recordCampaignOutcome(data.campaignId, "sent");
         } catch (err) {
+          const failureReason = formatFailureReason(err);
           await doc.ref.update({
             status: "pending",
             retries: retries + 1,
-            lastError: String(err),
+            lastError: failureReason,
           });
+          await db.collection(Collections.clients).doc(clientId).set({
+            lastSendStatus: "retrying",
+            lastSendError: failureReason,
+            lastAttemptAt: new Date(),
+            lastCampaignId: data.campaignId ?? null,
+          }, { merge: true });
         }
       }
 
-      // Update campaign delivery stats for completed messages
-      try {
-        const recentSent = await queueRef
-          .where("status", "in", ["sent", "failed"])
-          .where("campaignId", "!=", null)
-          .limit(200)
-          .get();
-
-      const campaignIds = new Set(
-        recentSent.docs
-          .map((d) => d.data().campaignId as string)
-          .filter(Boolean)
-      );
-
-      for (const campaignId of campaignIds) {
-        const sentCount = (
-          await queueRef
-            .where("campaignId", "==", campaignId)
-            .where("status", "==", "sent")
-            .count()
-            .get()
-        ).data().count;
-
-        const failedCount = (
-          await queueRef
-            .where("campaignId", "==", campaignId)
-            .where("status", "==", "failed")
-            .count()
-            .get()
-        ).data().count;
-
-        await db
-          .doc(
-            `${clientCol(clientId, Collections.campaigns)}/${campaignId}`
-          )
-          .update({
-            "stats.sent": sentCount,
-            "stats.failed": failedCount,
-          });
-      }
-      } catch (statsErr) {
-        // Don't let campaign stats errors block message processing
-        console.warn(`Campaign stats update failed for client ${clientId}:`, statsErr);
-      }
     }
   }
 );
@@ -339,6 +397,20 @@ export const enqueueMessage = onCall(
         .sort((a, b) => parseInt(a) - parseInt(b))
         .map((k) => ({ type: "text", value: obj[k] }));
       logger.info(`enqueueMessage: normalized templateParams=${JSON.stringify(templateParams)}`);
+    }
+
+    const templateButtonParams = Object.entries(request.data.templateButtonParams ?? {})
+      .sort(([left], [right]) => Number(left) - Number(right))
+      .map(([index, value]) => ({ index: Number(index), value: value.trim() }));
+
+    if (templateName && !/^[a-z0-9_]+$/.test(templateName)) {
+      throw new HttpsError("invalid-argument", "Invalid WhatsApp template name");
+    }
+    if (templateParams?.some((param) => !param.value?.trim())) {
+      throw new HttpsError("invalid-argument", "WhatsApp template variables cannot be blank");
+    }
+    if (templateButtonParams.some((param) => !Number.isInteger(param.index) || param.index < 0 || !param.value)) {
+      throw new HttpsError("invalid-argument", "WhatsApp button variables require a zero-based button index and non-blank value");
     }
 
     const normalizedContent = (content ?? "").trim();
@@ -370,11 +442,17 @@ export const enqueueMessage = onCall(
       throw new HttpsError("not-found", "Contact phone number not found");
     }
 
+    const clientRef = db.collection(Collections.clients).doc(clientId);
+    const clientSnapshot = await clientRef.get();
+    if (clientSnapshot.data()?.doNotContact === true) {
+      throw new HttpsError("failed-precondition", "This lead has opted out of messaging");
+    }
+
     const queueRef = db.collection(
       clientCol(clientId, Collections.messageQueue)
     );
 
-    const docRef = await queueRef.add({
+    const queueData = {
       contactId,
       phone,
       content: normalizedContent,
@@ -383,19 +461,114 @@ export const enqueueMessage = onCall(
       mediaType: mediaType ?? null,
       templateName: templateName ?? null,
       templateParams: templateParams ?? null,
+      templateHeaderImageUrl: request.data.templateHeaderImageUrl?.trim() || null,
+      templateButtonParams: templateButtonParams.length > 0 ? templateButtonParams : null,
       flowId: flowId ?? null,
       voiceFlowId: voiceFlowId ?? null,
       conversationId: request.data.conversationId ?? null,
       messageDocId: request.data.messageDocId ?? null,
+      campaignId: request.data.campaignId ?? null,
       status: "pending",
       createdAt: new Date(),
       createdBy: uid,
       retries: 0,
-    });
+    };
+
+    let docRef: DocumentReference;
+    if (request.data.campaignId) {
+      const campaignId = request.data.campaignId;
+      docRef = queueRef.doc(`${campaignId}_${contactId}`);
+      const campaignRef = db.collection("outreach_campaigns").doc(campaignId);
+      const usageRef = db.collection("outreach_daily_usage").doc(outreachDayKey());
+      const settingsSnapshot = await db.doc("system_settings/outreach").get();
+      const dailyLimit = Math.max(
+        1,
+        Number(settingsSnapshot.data()?.dailyLimit ?? DEFAULT_DAILY_OUTREACH_LIMIT),
+      );
+      let duplicate = false;
+
+      await db.runTransaction(async (transaction) => {
+        const [queueSnapshot, usageSnapshot, campaignSnapshot] = await Promise.all([
+          transaction.get(docRef),
+          transaction.get(usageRef),
+          transaction.get(campaignRef),
+        ]);
+        if (queueSnapshot.exists) {
+          duplicate = true;
+          return;
+        }
+        const used = Number(usageSnapshot.data()?.count ?? 0);
+        if (used >= dailyLimit) {
+          throw new HttpsError(
+            "resource-exhausted",
+            `Daily outreach limit of ${dailyLimit} reached`,
+          );
+        }
+        transaction.set(docRef, queueData);
+        transaction.set(usageRef, {
+          count: FieldValue.increment(1),
+          limit: dailyLimit,
+          date: outreachDayKey(),
+          updatedAt: new Date(),
+        }, { merge: true });
+        transaction.set(campaignRef, {
+          templateName: templateName ?? null,
+          channel: channel ?? "whatsapp",
+          createdBy: uid,
+          updatedAt: new Date(),
+          ...(!campaignSnapshot.exists ? {
+            status: "running",
+            createdAt: new Date(),
+          } : {}),
+          stats: {
+            queued: FieldValue.increment(1),
+            sent: FieldValue.increment(0),
+            delivered: FieldValue.increment(0),
+            read: FieldValue.increment(0),
+            failed: FieldValue.increment(0),
+          },
+        }, { merge: true });
+      });
+
+      if (duplicate) {
+        return { success: true, messageId: docRef.id, duplicate: true };
+      }
+    } else {
+      docRef = await queueRef.add(queueData);
+    }
+
+    await db.collection(Collections.clients).doc(clientId).set({
+      lastSendStatus: "pending",
+      lastSendError: null,
+      lastAttemptAt: new Date(),
+      sendAttemptCount: FieldValue.increment(1),
+      lastCampaignId: request.data.campaignId ?? null,
+    }, { merge: true });
 
     logger.info(`enqueueMessage: queued doc ${docRef.id} for ${phone} channel=${channel ?? "whatsapp"} templateName=${templateName ?? "null"}`);
     return { success: true, messageId: docRef.id };
   }
+);
+
+export const updateOutreachCampaignStatus = onCall(
+  callableOptions,
+  async (request: CallableRequest<{campaignId?: string; status?: string}>) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "Authentication required");
+    }
+    const campaignId = request.data.campaignId?.trim();
+    const status = request.data.status?.trim();
+    if (!campaignId || !["running", "paused", "cancelled", "completed"].includes(status ?? "")) {
+      throw new HttpsError("invalid-argument", "A valid campaign and status are required");
+    }
+    const campaignRef = db.collection("outreach_campaigns").doc(campaignId);
+    const snapshot = await campaignRef.get();
+    if (!snapshot.exists || snapshot.data()?.createdBy !== request.auth.uid) {
+      throw new HttpsError("permission-denied", "Campaign not found");
+    }
+    await campaignRef.update({ status, updatedAt: new Date() });
+    return { success: true };
+  },
 );
 
 /**
@@ -420,6 +593,9 @@ export const onMessageQueued = onDocumentCreated(
     const clientId = event.params.clientId;
     const channel = data.channel ?? "whatsapp";
     const retries = data.retries ?? 0;
+
+    if (!await campaignAllowsSending(data.campaignId)) return;
+    if (!await leadAllowsMessaging(clientId, snap.ref)) return;
 
     let phone = data.phone;
     if (!phone && data.contactId) {
@@ -504,6 +680,10 @@ export const onMessageQueued = onDocumentCreated(
             templateName: data.templateName,
             language: templateLanguage,
             bodyParams: bodyParams as TemplateParam[],
+            headerParams: data.templateHeaderImageUrl
+              ? [{ type: "image", value: data.templateHeaderImageUrl }]
+              : undefined,
+            buttonParams: data.templateButtonParams,
             integratedNumber: clientWaNumber,
           });
         } else if (data.mediaUrl) {
@@ -536,18 +716,37 @@ export const onMessageQueued = onDocumentCreated(
         await msg91Voice.makeVoiceCall(normalizedPhone, data.voiceFlowId);
       }
 
-      await snap.ref.update({ status: "sent", sentAt: new Date(), ...(msg91RequestId ? { msg91RequestId } : {}) });
+      const sentAt = new Date();
+      await snap.ref.update({
+        status: "sent",
+        sentAt,
+        lastError: FieldValue.delete(),
+        error: FieldValue.delete(),
+        ...(msg91RequestId ? { msg91RequestId } : {}),
+      });
 
       // Also update the actual message doc in the messages subcollection
       const conversationId = data.conversationId as string | undefined;
       const messageDocId = data.messageDocId as string | undefined;
+      if (conversationId) {
+        await db.doc(
+          `${clientCol(clientId, Collections.conversations)}/${conversationId}`
+        ).set({
+          lastMessage: String(data.content ?? ""),
+          lastMessageAt: sentAt,
+          lastMessageDirection: "outbound",
+        }, { merge: true });
+      }
       if (conversationId && messageDocId) {
         try {
           await db
             .doc(
               `${clientCol(clientId, Collections.conversations)}/${conversationId}/${Collections.messages}/${messageDocId}`
             )
-            .update({ status: "sent" });
+            .update({
+              status: "sent",
+              failureReason: FieldValue.delete(),
+            });
           logger.info(`[realtime] Updated message doc ${messageDocId} status to sent`);
         } catch (msgErr) {
           logger.warn(`[realtime] Failed to update message doc: ${msgErr}`);
@@ -556,6 +755,13 @@ export const onMessageQueued = onDocumentCreated(
 
       const clientRef = db.collection(Collections.clients).doc(clientId);
       const clientSnapshot = await clientRef.get();
+      await clientRef.set({
+        lastSendStatus: "sent",
+        lastSendError: null,
+        lastAttemptAt: new Date(),
+        lastCampaignId: data.campaignId ?? null,
+      }, { merge: true });
+      await recordCampaignOutcome(data.campaignId, "sent");
       if (clientSnapshot.data()?.stage === "reach") {
         await clientRef.update({
           stage: "click",
@@ -586,6 +792,12 @@ export const onMessageQueued = onDocumentCreated(
         retries: retries + 1,
         lastError: failureReason,
       });
+      await db.collection(Collections.clients).doc(clientId).set({
+        lastSendStatus: "retrying",
+        lastSendError: failureReason,
+        lastAttemptAt: new Date(),
+        lastCampaignId: data.campaignId ?? null,
+      }, { merge: true });
     }
   }
 );

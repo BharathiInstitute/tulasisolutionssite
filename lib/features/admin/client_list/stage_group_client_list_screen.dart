@@ -99,7 +99,12 @@ class _StageGroupClientListScreenState
 
               if (_searchQuery.isNotEmpty) {
                 searchScoped = searchScoped
-                    .where((c) => c.name.toLowerCase().contains(_searchQuery))
+                    .where(
+                      (c) =>
+                          c.clientCode.toLowerCase().contains(_searchQuery) ||
+                          c.name.toLowerCase().contains(_searchQuery) ||
+                          c.contactPhone.contains(_searchQuery),
+                    )
                     .toList();
               }
 
@@ -149,7 +154,7 @@ class _StageGroupClientListScreenState
                         Expanded(
                           child: TextField(
                             decoration: InputDecoration(
-                              hintText: 'Search clients by name...',
+                              hintText: 'Search by code, name, or phone...',
                               prefixIcon: const Icon(Icons.search),
                             ),
                             onChanged: (value) {
@@ -264,13 +269,20 @@ class _StageGroupClientListScreenState
               );
             },
             loading: () => const LoadingWidget(),
-            error: (error, stackTrace) =>
-                CustomErrorWidget(message: 'Error loading plans: $error'),
+            error: (error, stackTrace) => CustomErrorWidget(
+              message: 'Error loading plans: $error',
+              onRetry: () => ref.invalidate(allPlansProvider),
+            ),
           );
         },
         loading: () => const LoadingWidget(),
-        error: (error, stackTrace) =>
-            CustomErrorWidget(message: 'Error loading clients: $error'),
+        error: (error, stackTrace) => CustomErrorWidget(
+          message: 'Error loading clients: $error',
+          onRetry: () {
+            ref.invalidate(clientsListProvider);
+            ref.invalidate(allPlansProvider);
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Add client',

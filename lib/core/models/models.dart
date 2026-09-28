@@ -8,13 +8,10 @@ enum DraftCycleStage { instructions, working, confirmation }
 const adminPanelLabels = <String, String>{
   'leads': 'Leads',
   'clients': 'Clients',
-  'plans': 'Plans',
   'payments': 'Payments',
   'tasks': 'Tasks',
-  'salesTasks': 'Sales Tasks',
   'myDashboard': 'My Dashboard',
   'myTasks': 'My Tasks',
-  'briefs': 'Website Briefs',
   'users': 'Staff management',
   'chat': 'Chat',
   'performance': 'Performance tracking',
@@ -143,6 +140,7 @@ class AppUser {
 // Client model
 class Client {
   final String id;
+  final String clientCode;
   final String name;
   final String? ownerName;
   final String category;
@@ -165,9 +163,16 @@ class Client {
   final String? closedNote;
   final DateTime? stageChangedAt;
   final bool isArchived;
+  final String? lastSendStatus;
+  final String? lastSendError;
+  final DateTime? lastAttemptAt;
+  final int sendAttemptCount;
+  final String? lastCampaignId;
+  final bool doNotContact;
 
   Client({
     required this.id,
+    this.clientCode = '',
     required this.name,
     this.ownerName,
     required this.category,
@@ -190,12 +195,19 @@ class Client {
     this.closedNote,
     this.stageChangedAt,
     this.isArchived = false,
+    this.lastSendStatus,
+    this.lastSendError,
+    this.lastAttemptAt,
+    this.sendAttemptCount = 0,
+    this.lastCampaignId,
+    this.doNotContact = false,
   });
 
   factory Client.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return Client(
       id: doc.id,
+      clientCode: data['clientCode']?.toString() ?? '',
       name: data['name'] ?? '',
       ownerName: data['ownerName'] ?? data['owner'] ?? data['contactName'],
       category: data['category'] ?? '',
@@ -204,7 +216,7 @@ class Client {
       alternatePhone: data['alternatePhone'],
       assignedManager: data['assignedManager'],
       stage: ClientStage.values.firstWhere(
-        (s) => s.name == data['stage'],
+        (s) => s.name == (data['stage'] == 'refer' ? 'retain' : data['stage']),
         orElse: () => ClientStage.reach,
       ),
       createdDate: (data['createdDate'] as Timestamp).toDate(),
@@ -227,11 +239,20 @@ class Client {
           ? (data['stageChangedAt'] as Timestamp).toDate()
           : null,
       isArchived: data['isArchived'] ?? false,
+      lastSendStatus: data['lastSendStatus'],
+      lastSendError: data['lastSendError'],
+      lastAttemptAt: data['lastAttemptAt'] != null
+          ? (data['lastAttemptAt'] as Timestamp).toDate()
+          : null,
+      sendAttemptCount: (data['sendAttemptCount'] as num?)?.toInt() ?? 0,
+      lastCampaignId: data['lastCampaignId'],
+      doNotContact: data['doNotContact'] == true,
     );
   }
 
   Map<String, dynamic> toFirestore() {
     return {
+      'clientCode': clientCode,
       'name': name,
       'ownerName': ownerName,
       'category': category,
@@ -258,11 +279,20 @@ class Client {
           ? Timestamp.fromDate(stageChangedAt!)
           : null,
       'isArchived': isArchived,
+      'lastSendStatus': lastSendStatus,
+      'lastSendError': lastSendError,
+      'lastAttemptAt': lastAttemptAt != null
+          ? Timestamp.fromDate(lastAttemptAt!)
+          : null,
+      'sendAttemptCount': sendAttemptCount,
+      'lastCampaignId': lastCampaignId,
+      'doNotContact': doNotContact,
     };
   }
 
   Client copyWith({
     String? id,
+    String? clientCode,
     String? name,
     String? ownerName,
     bool clearOwnerName = false,
@@ -289,9 +319,17 @@ class Client {
     bool clearClosedDetails = false,
     DateTime? stageChangedAt,
     bool? isArchived,
+    String? lastSendStatus,
+    String? lastSendError,
+    bool clearLastSendError = false,
+    DateTime? lastAttemptAt,
+    int? sendAttemptCount,
+    String? lastCampaignId,
+    bool? doNotContact,
   }) {
     return Client(
       id: id ?? this.id,
+      clientCode: clientCode ?? this.clientCode,
       name: name ?? this.name,
       ownerName: clearOwnerName ? ownerName : ownerName ?? this.ownerName,
       category: category ?? this.category,
@@ -324,131 +362,16 @@ class Client {
           : closedNote ?? this.closedNote,
       stageChangedAt: stageChangedAt ?? this.stageChangedAt,
       isArchived: isArchived ?? this.isArchived,
+      lastSendStatus: lastSendStatus ?? this.lastSendStatus,
+      lastSendError: clearLastSendError
+          ? lastSendError
+          : lastSendError ?? this.lastSendError,
+      lastAttemptAt: lastAttemptAt ?? this.lastAttemptAt,
+      sendAttemptCount: sendAttemptCount ?? this.sendAttemptCount,
+      lastCampaignId: lastCampaignId ?? this.lastCampaignId,
+      doNotContact: doNotContact ?? this.doNotContact,
     );
   }
-}
-
-enum SalesTaskStatus {
-  notStarted,
-  inProgress,
-  waitingClient,
-  completed,
-  cancelled,
-}
-
-extension SalesTaskStatusLabel on SalesTaskStatus {
-  String get label => switch (this) {
-    SalesTaskStatus.notStarted => 'To do',
-    SalesTaskStatus.inProgress => 'In progress',
-    SalesTaskStatus.waitingClient => 'Waiting on client',
-    SalesTaskStatus.completed => 'Completed',
-    SalesTaskStatus.cancelled => 'Cancelled',
-  };
-}
-
-class SalesTask {
-  final String id;
-  final String clientId;
-  final String title;
-  final String category;
-  final String priority;
-  final SalesTaskStatus status;
-  final String notes;
-  final String outcome;
-  final bool isArchived;
-  final DateTime? dueAt;
-  final DateTime? completedAt;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-
-  const SalesTask({
-    required this.id,
-    required this.clientId,
-    required this.title,
-    required this.category,
-    this.priority = 'normal',
-    this.status = SalesTaskStatus.notStarted,
-    this.notes = '',
-    this.outcome = '',
-    this.isArchived = false,
-    this.dueAt,
-    this.completedAt,
-    required this.createdAt,
-    required this.updatedAt,
-  });
-
-  factory SalesTask.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return SalesTask(
-      id: doc.id,
-      clientId: data['clientId']?.toString() ?? '',
-      title: data['title']?.toString() ?? '',
-      category: data['category']?.toString() ?? '',
-      priority: data['priority']?.toString() ?? 'normal',
-      status: SalesTaskStatus.values.firstWhere(
-        (value) => value.name == data['status'],
-        orElse: () => SalesTaskStatus.notStarted,
-      ),
-      notes: data['notes']?.toString() ?? '',
-      outcome: data['outcome']?.toString() ?? '',
-      isArchived: data['isArchived'] == true,
-      dueAt: data['dueAt'] == null
-          ? null
-          : (data['dueAt'] as Timestamp).toDate(),
-      completedAt: data['completedAt'] == null
-          ? null
-          : (data['completedAt'] as Timestamp).toDate(),
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
-    );
-  }
-
-  Map<String, dynamic> toFirestore() => {
-    'clientId': clientId,
-    'title': title,
-    'category': category,
-    'priority': priority,
-    'status': status.name,
-    'notes': notes,
-    'outcome': outcome,
-    'isArchived': isArchived,
-    'dueAt': dueAt == null ? null : Timestamp.fromDate(dueAt!),
-    'completedAt': completedAt == null
-        ? null
-        : Timestamp.fromDate(completedAt!),
-    'createdAt': Timestamp.fromDate(createdAt),
-    'updatedAt': Timestamp.fromDate(updatedAt),
-  };
-
-  SalesTask copyWith({
-    String? clientId,
-    String? title,
-    String? category,
-    String? priority,
-    SalesTaskStatus? status,
-    String? notes,
-    String? outcome,
-    bool? isArchived,
-    DateTime? dueAt,
-    bool clearDueAt = false,
-    DateTime? completedAt,
-    bool clearCompletedAt = false,
-    DateTime? updatedAt,
-  }) => SalesTask(
-    id: id,
-    clientId: clientId ?? this.clientId,
-    title: title ?? this.title,
-    category: category ?? this.category,
-    priority: priority ?? this.priority,
-    status: status ?? this.status,
-    notes: notes ?? this.notes,
-    outcome: outcome ?? this.outcome,
-    isArchived: isArchived ?? this.isArchived,
-    dueAt: clearDueAt ? null : dueAt ?? this.dueAt,
-    completedAt: clearCompletedAt ? null : completedAt ?? this.completedAt,
-    createdAt: createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-  );
 }
 
 // Baseline model
@@ -1377,3 +1300,4 @@ class GuaranteeEvent {
     };
   }
 }
+

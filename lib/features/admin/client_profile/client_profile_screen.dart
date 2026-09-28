@@ -8,8 +8,8 @@ import 'package:tulasisolutionssite/core/constants/enums.dart';
 import 'package:tulasisolutionssite/core/widgets/app_drawer.dart';
 import 'package:tulasisolutionssite/core/widgets/feature_progress_widgets.dart';
 import 'package:tulasisolutionssite/core/widgets/shared_widgets.dart';
+import 'package:tulasisolutionssite/features/admin/client_profile/assign_plan_dialog.dart';
 import 'package:tulasisolutionssite/features/admin/goals/add_edit_goal_screen.dart';
-import 'package:tulasisolutionssite/features/admin/plans/plans_screen.dart';
 
 class ClientProfileScreen extends ConsumerStatefulWidget {
   final String clientId;
@@ -126,6 +126,8 @@ class _ClientProfileScreenState extends ConsumerState<ClientProfileScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    if (client.clientCode.isNotEmpty)
+                      Chip(label: Text(client.clientCode)),
                     if (client.category.isNotEmpty)
                       Chip(label: Text(client.category)),
                     StageChip(label: client.stage.displayName),

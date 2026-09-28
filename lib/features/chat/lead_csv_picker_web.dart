@@ -8,7 +8,8 @@ Future<Uint8List?> pickLeadCsvBytes() {
   final completer = Completer<Uint8List?>();
   final input = HTMLInputElement()
     ..type = 'file'
-    ..accept = '.csv,text/csv';
+    ..accept =
+        '.csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
   void finish(Uint8List? bytes) {
     if (completer.isCompleted) return;

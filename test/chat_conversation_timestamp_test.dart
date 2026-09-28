@@ -87,6 +87,25 @@ void main() {
         'Ready to close',
       );
     });
+
+    test('uses an explicit follow-up date before stage cadence', () {
+      final client = Client(
+        id: 'lead',
+        name: 'Restaurant',
+        category: '',
+        contactEmail: '',
+        contactPhone: '9000000000',
+        stage: ClientStage.consult,
+        stageChangedAt: now.subtract(const Duration(days: 10)),
+        createdDate: now.subtract(const Duration(days: 10)),
+        followUpAt: now.add(const Duration(days: 2)),
+      );
+
+      expect(
+        funnelReminderLabel(client, null, now: now).label,
+        'Follow-up in 2 days',
+      );
+    });
   });
 
   group('Message.fromMap', () {
@@ -117,6 +136,24 @@ void main() {
       final secondMani = _client('second', 'Mani', '9160160748');
 
       expect(findClientByPhone('9160160748', [firstMani, secondMani]), isNull);
+    });
+
+    test('prefers the conversation owner when phone matches are ambiguous', () {
+      final imported = _client('9160160748', 'Imported Mani', '+91 91601 60748');
+      final existing = _client('existing', 'Existing Mani', '9160160748');
+      final conversation = Conversation(
+        id: 'import-9160160748',
+        clientId: imported.id,
+        contactId: imported.id,
+        contactName: imported.name,
+        contactPhone: imported.contactPhone,
+        createdAt: DateTime(2026, 9, 21),
+      );
+
+      expect(
+        findClientForConversation(conversation, [existing, imported]),
+        same(imported),
+      );
     });
   });
 }

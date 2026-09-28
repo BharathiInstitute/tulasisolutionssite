@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "newproject1234561"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

@@ -46,8 +46,10 @@ exports.getWhatsAppIntegratedNumber = getWhatsAppIntegratedNumber;
 exports.getClientWhatsAppNumber = getClientWhatsAppNumber;
 exports.mapMSG91Error = mapMSG91Error;
 exports.sendRequest = sendRequest;
+exports.uploadWhatsAppSampleMedia = uploadWhatsAppSampleMedia;
 const axios_1 = __importDefault(require("axios"));
 const admin = __importStar(require("firebase-admin"));
+const form_data_1 = __importDefault(require("form-data"));
 // ── Base URLs ────────────────────────────────────────────────
 exports.MSG91_BASE_URL = "https://control.msg91.com/api/v5";
 exports.MSG91_WA_URL = "https://api.msg91.com/api/v5/whatsapp";
@@ -98,9 +100,14 @@ const ERROR_MAP = {
 function mapMSG91Error(statusCode, responseData) {
     const data = responseData;
     const rawCode = String(data?.code ?? data?.type ?? statusCode);
+    const providerMessage = typeof data?.message === "string" && data.message.trim()
+        ? data.message
+        : typeof data?.errors === "string" && data.errors.trim()
+            ? data.errors
+            : undefined;
     return {
         code: rawCode,
-        message: ERROR_MAP[rawCode] ?? data?.message ?? "Unknown MSG91 error",
+        message: ERROR_MAP[rawCode] ?? providerMessage ?? "Unknown MSG91 error",
         details: JSON.stringify(data),
     };
 }
@@ -145,5 +152,33 @@ async function sendRequest(endpoint, payload, method = "POST") {
         }
     }
     throw lastError ?? new Error("MSG91 request failed after retries");
+}
+async function uploadWhatsAppSampleMedia(mediaUrl, integratedNumber) {
+    const mediaResponse = await axios_1.default.get(mediaUrl, {
+        responseType: "arraybuffer",
+        timeout: 30000,
+    });
+    const contentType = String(mediaResponse.headers["content-type"] ?? "image/jpeg");
+    const extension = contentType.includes("png") ? "png" : "jpg";
+    const form = new form_data_1.default();
+    form.append("whatsapp_number", integratedNumber);
+    form.append("media", Buffer.from(mediaResponse.data), {
+        filename: `template-header.${extension}`,
+        contentType,
+    });
+    const response = await axios_1.default.post(`${exports.MSG91_WA_URL}/sample-media-upload/`, form, {
+        headers: {
+            authkey: getAuthKey(),
+            ...form.getHeaders(),
+        },
+        timeout: 30000,
+        maxBodyLength: Infinity,
+    });
+    const data = response.data.data;
+    const handle = data?.url;
+    if (response.data.status !== "success" || typeof handle !== "string" || !handle) {
+        throw new Error(`MSG91 sample media upload failed: ${JSON.stringify(response.data)}`);
+    }
+    return handle;
 }
 //# sourceMappingURL=msg91-client.js.map

@@ -181,7 +181,11 @@ async function queueQualificationReply(input: QualificationInput, content: strin
   const now = new Date();
   const scheduledAt = delaySeconds > 0 ? new Date(now.getTime() + delaySeconds * 1000) : now;
   const messageRef = await db.collection(`${clientCol(input.clientId, Collections.conversations)}/${input.conversationId}/${Collections.messages}`).add({ conversationId: input.conversationId, contactId: input.contactId, direction: "outbound", type: "text", content, status: "queued", senderName: "Tulasi Solutions", createdAt: now, eventAt: now, channel: "whatsapp" });
-  await db.doc(`${clientCol(input.clientId, Collections.conversations)}/${input.conversationId}`).update({ lastMessage: content, lastMessageAt: now });
+  await db.doc(`${clientCol(input.clientId, Collections.conversations)}/${input.conversationId}`).update({
+    lastMessage: content,
+    lastMessageAt: now,
+    lastMessageDirection: "outbound",
+  });
   await db.collection(clientCol(input.clientId, Collections.messageQueue)).add({ contactId: input.contactId, phone: input.phone, conversationId: input.conversationId, messageDocId: messageRef.id, content, channel: "whatsapp", status: "pending", retries: 0, source: "lead_qualification", scheduledAt, createdAt: now });
 }
 

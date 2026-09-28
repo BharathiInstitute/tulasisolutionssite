@@ -1,50 +1,16 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/enums.dart';
-import '../models/brand_brief.dart';
+import '../models/client_deduplication.dart';
 import '../models/models.dart';
-import '../models/website_brief.dart';
 import '../models/weekly_report.dart';
 import '../performance/performance_models.dart';
 
 class FirebaseAuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  // Sign up with email and password
-  Future<User?> signUpWithEmail({
-    required String email,
-    required String password,
-    required String name,
-    required bool isAdmin,
-  }) async {
-    try {
-      final UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      final user = result.user;
-      if (user != null) {
-        // Store user data in Firestore
-        await _firestore.collection('users').doc(user.uid).set({
-          'uid': user.uid,
-          'email': email,
-          'name': name,
-          'isAdmin': isAdmin,
-          'role': '',
-          'team': '',
-          'panels': const <String>[],
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-
-      return user;
-    } on FirebaseAuthException catch (e) {
-      print('Sign up error: ${e.message}');
-      rethrow;
-    }
-  }
 
   // Sign in with email and password
   Future<User?> signInWithEmail({
@@ -91,14 +57,29 @@ class FirebaseAuthService {
   Future<AppUser?> getUserProfile(String uid) async {
     final email = _auth.currentUser?.email?.trim().toLowerCase();
     if (email != null && email.isNotEmpty) {
-      final staffDoc = await _firestore.collection('users').doc(email).get();
+      final staffDoc = await _getUserDocument(email);
       if (staffDoc.exists) {
         return AppUser.fromFirestore(staffDoc, isAdminOverride: false);
       }
     }
 
-    final directDoc = await _firestore.collection('users').doc(uid).get();
+    final directDoc = await _getUserDocument(uid);
     return directDoc.exists ? AppUser.fromFirestore(directDoc) : null;
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>> _getUserDocument(
+    String documentId,
+  ) {
+    return _firestore
+        .collection('users')
+        .doc(documentId)
+        .get(const GetOptions(source: Source.server))
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => throw Exception(
+            'Timed out loading your profile. Check your internet connection.',
+          ),
+        );
   }
 
   Stream<AppUser?> getUserProfileStream(String uid) {
@@ -339,16 +320,6 @@ class FirestoreService {
     }
   }
 
-  Future<Client?> getClientByEmail(String email) async {
-    final snapshot = await _firestore
-        .collection('clients')
-        .where('contactEmail', isEqualTo: email.trim().toLowerCase())
-        .limit(1)
-        .get();
-    if (snapshot.docs.isEmpty) return null;
-    return Client.fromFirestore(snapshot.docs.first);
-  }
-
   Stream<List<Client>> getClientsStream() {
     return _firestore.collection('clients').snapshots().map((snapshot) {
       final clients = snapshot.docs
@@ -362,18 +333,18 @@ class FirestoreService {
   // One-time fetch, used instead of the live stream when the persistent
   // real-time connection is blocked by the network (proxy/antivirus).
   Future<List<Client>> getClientsOnce() async {
-    final snapshot = await _firestore
-        .collection('clients')
-        .get(const GetOptions(source: Source.server))
-        .timeout(
-          const Duration(seconds: 15),
-          onTimeout: () => throw Exception(
-            'Timed out reaching Firestore. Check your internet connection.',
-          ),
-        );
-    final clients = snapshot.docs
-        .map((doc) => Client.fromFirestore(doc))
-        .toList();
+    final query = _firestore.collection('clients');
+    late QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await query
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      snapshot = await query.get(const GetOptions(source: Source.cache));
+    }
+    final clients = deduplicateClientsByPhone(
+      snapshot.docs.map((doc) => Client.fromFirestore(doc)),
+    );
     clients.sort((a, b) => b.createdDate.compareTo(a.createdDate));
     return clients;
   }
@@ -390,34 +361,15 @@ class FirestoreService {
     }
   }
 
-  Future<void> deleteClient(String clientId) {
-    return _firestore.collection('clients').doc(clientId).delete();
-  }
-
-  Stream<List<SalesTask>> getSalesTasksStream() {
-    return _firestore.collection('sales_tasks').snapshots().map((snapshot) {
-      final tasks = snapshot.docs.map(SalesTask.fromFirestore).toList();
-      tasks.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return tasks;
+  Future<void> setClientArchived(String clientId, bool isArchived) {
+    return _firestore.collection('clients').doc(clientId).update({
+      'isArchived': isArchived,
+      'updatedDate': FieldValue.serverTimestamp(),
     });
   }
 
-  Future<void> createSalesTask(SalesTask task) {
-    return _firestore
-        .collection('sales_tasks')
-        .doc(task.id)
-        .set(task.toFirestore());
-  }
-
-  Future<void> updateSalesTask(SalesTask task) {
-    return _firestore
-        .collection('sales_tasks')
-        .doc(task.id)
-        .update(task.toFirestore());
-  }
-
-  Future<void> deleteSalesTask(String taskId) {
-    return _firestore.collection('sales_tasks').doc(taskId).delete();
+  Future<void> deleteClient(String clientId) {
+    return _firestore.collection('clients').doc(clientId).delete();
   }
 
   // Setup Checklist Items
@@ -591,16 +543,17 @@ class FirestoreService {
   // One-time fetch, used instead of the live stream when the persistent
   // real-time connection is blocked by the network (proxy/antivirus).
   Future<List<Plan>> getAllPlansOnce() async {
-    final snapshot = await _firestore
+    final query = _firestore
         .collection('plans')
-        .orderBy('startDate', descending: true)
-        .get(const GetOptions(source: Source.server))
-        .timeout(
-          const Duration(seconds: 15),
-          onTimeout: () => throw Exception(
-            'Timed out reaching Firestore. Check your internet connection.',
-          ),
-        );
+        .orderBy('startDate', descending: true);
+    late QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await query
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      snapshot = await query.get(const GetOptions(source: Source.cache));
+    }
     return snapshot.docs.map((doc) => Plan.fromFirestore(doc)).toList();
   }
 
@@ -657,98 +610,6 @@ class FirestoreService {
         .collection('weekly_reports')
         .doc(report.id)
         .set(report.toFirestore());
-  }
-
-  // Website briefs
-  Stream<WebsiteBrief?> getWebsiteBriefStream(String planId) {
-    return _firestore
-        .collection('website_briefs')
-        .doc(planId)
-        .snapshots()
-        .map((doc) => doc.exists ? WebsiteBrief.fromFirestore(doc) : null);
-  }
-
-  Stream<List<WebsiteBrief>> getClientWebsiteBriefsStream(String clientId) {
-    return _firestore
-        .collection('website_briefs')
-        .where('clientId', isEqualTo: clientId)
-        .snapshots()
-        .map((snapshot) {
-          final briefs = snapshot.docs
-              .map((doc) => WebsiteBrief.fromFirestore(doc))
-              .toList();
-          briefs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-          return briefs;
-        });
-  }
-
-  Stream<List<WebsiteBrief>> getAllWebsiteBriefsStream() {
-    return _firestore.collection('website_briefs').snapshots().map((snapshot) {
-      final briefs = snapshot.docs
-          .map((doc) => WebsiteBrief.fromFirestore(doc))
-          .toList();
-      briefs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return briefs;
-    });
-  }
-
-  Future<void> saveWebsiteBrief(WebsiteBrief brief) async {
-    await _firestore
-        .collection('website_briefs')
-        .doc(brief.planId)
-        .set(brief.toFirestore(), SetOptions(merge: true));
-  }
-
-  Future<void> approveWebsiteBriefVersion(WebsiteBrief brief) async {
-    final batch = _firestore.batch();
-    final briefRef = _firestore.collection('website_briefs').doc(brief.planId);
-    final versionRef = briefRef.collection('versions').doc();
-    batch.set(briefRef, brief.toFirestore(), SetOptions(merge: true));
-    batch.set(versionRef, {
-      ...brief.toFirestore(),
-      'versionId': versionRef.id,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    await batch.commit();
-  }
-
-  // Brand briefs
-  Stream<BrandBrief?> getBrandBriefStream(String planId) {
-    return _firestore
-        .collection('brand_briefs')
-        .doc(planId)
-        .snapshots()
-        .map((doc) => doc.exists ? BrandBrief.fromFirestore(doc) : null);
-  }
-
-  Stream<List<BrandBrief>> getAllBrandBriefsStream() {
-    return _firestore.collection('brand_briefs').snapshots().map((snapshot) {
-      final briefs = snapshot.docs
-          .map((doc) => BrandBrief.fromFirestore(doc))
-          .toList();
-      briefs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return briefs;
-    });
-  }
-
-  Future<void> saveBrandBrief(BrandBrief brief) async {
-    await _firestore
-        .collection('brand_briefs')
-        .doc(brief.planId)
-        .set(brief.toFirestore(), SetOptions(merge: true));
-  }
-
-  Future<void> approveBrandBriefVersion(BrandBrief brief) async {
-    final batch = _firestore.batch();
-    final briefRef = _firestore.collection('brand_briefs').doc(brief.planId);
-    final versionRef = briefRef.collection('versions').doc();
-    batch.set(briefRef, brief.toFirestore(), SetOptions(merge: true));
-    batch.set(versionRef, {
-      ...brief.toFirestore(),
-      'versionId': versionRef.id,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    await batch.commit();
   }
 
   // Payments

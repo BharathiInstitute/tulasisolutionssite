@@ -10,6 +10,7 @@ import { sendReadReceipt } from "./msg91/msg91-whatsapp";
 interface MarkReadRequest {
   conversationId: string;
   clientId?: string;
+  viewedAt?: string;
 }
 
 async function resolveClientId(
@@ -46,10 +47,17 @@ export const markConversationRead = onCall(
   callableOptions,
   async (request: CallableRequest<MarkReadRequest>) => {
     const clientId = await resolveClientId(request);
-    const { conversationId } = request.data;
+    const { conversationId, viewedAt } = request.data;
 
     if (!conversationId) {
       return { success: false, error: "conversationId is required" };
+    }
+
+    const viewedAtMs = typeof viewedAt === "string" ? Date.parse(viewedAt) : Number.NaN;
+    const viewAgeMs = Date.now() - viewedAtMs;
+    if (!Number.isFinite(viewedAtMs) || viewAgeMs < -30_000 || viewAgeMs > 120_000) {
+      logger.warn("markConversationRead ignored without a recent explicit view");
+      return { success: false, error: "Conversation is not actively open" };
     }
 
     try {

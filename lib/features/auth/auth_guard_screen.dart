@@ -25,7 +25,7 @@ class AuthGuardScreen extends ConsumerWidget {
           );
         }
 
-        final profileAsync = ref.watch(currentUserProfileStreamProvider);
+        final profileAsync = ref.watch(currentUserProfileProvider);
         return profileAsync.when(
           loading: () => const Scaffold(
             body: Center(child: CircularProgressIndicator()),

@@ -25,12 +25,18 @@ exports.listTemplates = (0, https_1.onCall)({
     const integratedNumber = (0, msg91_client_1.getWhatsAppIntegratedNumber)();
     const templates = await (0, msg91_whatsapp_1.listTemplates)(integratedNumber);
     const savedTemplates = await config_1.db.collection("whatsapp_templates").get();
-    const savedBodies = new Map(savedTemplates.docs.map((doc) => [doc.id, doc.data().body]));
+    const savedMetadata = new Map(savedTemplates.docs.map((doc) => [doc.id, doc.data()]));
     const normalizedTemplates = templates
-        .map((template) => ({
-        ...template,
-        body: template.body ?? savedBodies.get(template.name),
-    }))
+        .map((template) => {
+        const saved = savedMetadata.get(template.name);
+        return {
+            ...template,
+            body: template.body ?? saved?.body,
+            headerImageUrl: saved?.headerImageUrl ?? null,
+            ctaUrl: saved?.ctaUrl ?? null,
+            ctaLabel: saved?.ctaLabel ?? null,
+        };
+    })
         .filter((template) => template.enabled &&
         typeof template.body === "string" &&
         template.body.trim().length > 0);
@@ -48,11 +54,41 @@ exports.submitWhatsAppTemplate = (0, https_1.onCall)({
     const body = request.data.body?.trim();
     const category = request.data.category?.trim();
     const language = request.data.language?.trim();
+    const ctaUrl = request.data.ctaUrl?.trim();
+    const ctaLabel = request.data.ctaLabel?.trim();
+    const headerImageUrl = request.data.headerImageUrl?.trim();
     if (!name || !/^[a-z0-9_]+$/.test(name)) {
         throw new https_1.HttpsError("invalid-argument", "Template name must use lowercase letters, numbers, and underscores only");
     }
     if (!body || !category || !language) {
         throw new https_1.HttpsError("invalid-argument", "Name, body, category, and language are required");
+    }
+    if (ctaUrl) {
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(ctaUrl);
+        }
+        catch {
+            throw new https_1.HttpsError("invalid-argument", "CTA URL must be a valid HTTPS URL");
+        }
+        if (parsedUrl.protocol !== "https:") {
+            throw new https_1.HttpsError("invalid-argument", "CTA URL must use HTTPS");
+        }
+        if (!ctaLabel || ctaLabel.length > 25) {
+            throw new https_1.HttpsError("invalid-argument", "CTA label is required and must be 25 characters or fewer");
+        }
+    }
+    if (headerImageUrl) {
+        let parsedImageUrl;
+        try {
+            parsedImageUrl = new URL(headerImageUrl);
+        }
+        catch {
+            throw new https_1.HttpsError("invalid-argument", "Header image must be a valid HTTPS URL");
+        }
+        if (parsedImageUrl.protocol !== "https:") {
+            throw new https_1.HttpsError("invalid-argument", "Header image must use HTTPS");
+        }
     }
     const integratedNumber = (0, msg91_client_1.getWhatsAppIntegratedNumber)();
     let result;
@@ -63,6 +99,9 @@ exports.submitWhatsAppTemplate = (0, https_1.onCall)({
             category,
             language,
             footer: request.data.footer?.trim() || undefined,
+            ctaUrl: ctaUrl || undefined,
+            ctaLabel: ctaLabel || undefined,
+            headerImageUrl: headerImageUrl || undefined,
             integratedNumber,
         });
     }
@@ -85,6 +124,9 @@ exports.submitWhatsAppTemplate = (0, https_1.onCall)({
         category,
         language,
         footer: request.data.footer?.trim() || null,
+        ctaUrl: ctaUrl || null,
+        ctaLabel: ctaLabel || null,
+        headerImageUrl: headerImageUrl || null,
         submittedAt: new Date(),
         msg91TemplateId: result.templateId ?? null,
     });

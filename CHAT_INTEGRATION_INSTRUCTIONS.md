@@ -238,7 +238,7 @@ After deploying functions, configure MSG91:
 
 1. **Get your webhook URL:**
    ```
-   https://asia-south1-YOUR-PROJECT-ID.cloudfunctions.net/msg91Webhook
+  https://asia-south1-newproject1234561.cloudfunctions.net/msg91Webhook
    ```
 
 2. **Login to MSG91:** https://control.msg91.com
@@ -299,6 +299,12 @@ In Firebase Console (Firestore), create:
 - Check MSG91 secrets are set correctly
 - Verify webhook URL in MSG91 dashboard
 - Check function logs for errors
+
+### Outbound Status Works but Inbound Messages Are Missing
+- In MSG91, go to **WhatsApp → Settings → Webhooks**.
+- Use `https://asia-south1-newproject1234561.cloudfunctions.net/msg91Webhook`.
+- Ensure **Message received** is enabled; delivery and read callbacks alone do not include customer replies.
+- Send a new reply, then confirm the logs contain `msg91Webhook received` with no `direction: "1"` value. `direction: "1"` is an outbound status callback, not an inbound message.
 
 ---
 

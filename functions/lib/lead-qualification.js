@@ -198,7 +198,11 @@ async function queueQualificationReply(input, content, delaySeconds = 0) {
     const now = new Date();
     const scheduledAt = delaySeconds > 0 ? new Date(now.getTime() + delaySeconds * 1000) : now;
     const messageRef = await config_1.db.collection(`${(0, config_1.clientCol)(input.clientId, config_1.Collections.conversations)}/${input.conversationId}/${config_1.Collections.messages}`).add({ conversationId: input.conversationId, contactId: input.contactId, direction: "outbound", type: "text", content, status: "queued", senderName: "Tulasi Solutions", createdAt: now, eventAt: now, channel: "whatsapp" });
-    await config_1.db.doc(`${(0, config_1.clientCol)(input.clientId, config_1.Collections.conversations)}/${input.conversationId}`).update({ lastMessage: content, lastMessageAt: now });
+    await config_1.db.doc(`${(0, config_1.clientCol)(input.clientId, config_1.Collections.conversations)}/${input.conversationId}`).update({
+        lastMessage: content,
+        lastMessageAt: now,
+        lastMessageDirection: "outbound",
+    });
     await config_1.db.collection((0, config_1.clientCol)(input.clientId, config_1.Collections.messageQueue)).add({ contactId: input.contactId, phone: input.phone, conversationId: input.conversationId, messageDocId: messageRef.id, content, channel: "whatsapp", status: "pending", retries: 0, source: "lead_qualification", scheduledAt, createdAt: now });
 }
 async function processQualificationTimeouts() {

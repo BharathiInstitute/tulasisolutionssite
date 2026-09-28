@@ -4,44 +4,110 @@ import 'package:flutter/material.dart';
 /// text" so they can be grouped under sub-headers when displayed. A feature
 /// with no "Category: " prefix falls under [defaultFeatureCategory].
 const String defaultFeatureCategory = 'General';
-const String visionAndPlanFeatureCategory = 'Vision & Plan & Goals & Promise';
+const String visionAndPlanFeatureCategory = 'Vision & Plan';
 const String softwareFeatureCategory = 'Software';
-const String designFeatureCategory = 'Design, Brandkit & Posters';
-const String contentFeatureCategory = 'Content, Reels & Videos';
-const String distributionAndSupportFeatureCategory = 'Distribution & Support';
+const String contentFeatureCategory = 'Content';
+const String marketingFeatureCategory = 'Marketing';
+const String distributionFeatureCategory = 'Distribution';
+const String taskCategorySeparator = ' / ';
 
 const List<String> allPlanFeatureCategories = [
-  'Practice',
   visionAndPlanFeatureCategory,
-  designFeatureCategory,
   softwareFeatureCategory,
   contentFeatureCategory,
-  distributionAndSupportFeatureCategory,
+  marketingFeatureCategory,
+  distributionFeatureCategory,
 ];
 
-const List<String> setupPlanFeatureCategories = allPlanFeatureCategories;
-const List<String> subscriptionPlanFeatureCategories = allPlanFeatureCategories;
+const Map<String, List<String>> planFeatureSubcategories = {
+  visionAndPlanFeatureCategory: [],
+  softwareFeatureCategory: ['App', 'Web'],
+  contentFeatureCategory: ['Brand Kit', 'Video Kit', 'Content'],
+  marketingFeatureCategory: ['Set up', 'Manage'],
+  distributionFeatureCategory: ['Set up', 'Manage'],
+};
+
+const List<String> allPlanFeatureCategoryLabels = [
+  visionAndPlanFeatureCategory,
+  'Software / App',
+  'Software / Web',
+  'Content / Brand Kit',
+  'Content / Video Kit',
+  'Content / Content',
+  'Marketing / Set up',
+  'Marketing / Manage',
+  'Distribution / Set up',
+  'Distribution / Manage',
+];
+
+const List<String> setupPlanFeatureCategories = allPlanFeatureCategoryLabels;
+const List<String> subscriptionPlanFeatureCategories =
+    allPlanFeatureCategoryLabels;
 const List<String> customTaskFeatureCategories = allPlanFeatureCategories;
 
 String displayFeatureCategory(String category) {
   switch (category.trim().toLowerCase()) {
     case 'foundation':
     case 'vision & plan':
+    case 'vision & plan & goals & promise':
     case 'goals':
     case 'promise':
       return visionAndPlanFeatureCategory;
+    case 'software / app':
+      return encodeFeatureCategory(softwareFeatureCategory, 'App');
+    case 'software / web':
+    case 'software':
     case 'website & app':
-      return softwareFeatureCategory;
+    case 'software, app & web':
+      return encodeFeatureCategory(softwareFeatureCategory, 'Web');
+    case 'practice':
     case 'design':
-      return designFeatureCategory;
+    case 'design, brandkit & posters':
+    case 'content / brand kit':
+      return encodeFeatureCategory(contentFeatureCategory, 'Brand Kit');
+    case 'content / video kit':
+      return encodeFeatureCategory(contentFeatureCategory, 'Video Kit');
     case 'content':
-      return contentFeatureCategory;
+    case 'content, reels & videos':
+    case 'content / content':
+    case 'brand kit, video kit, content, marketing & distribution':
+      return encodeFeatureCategory(contentFeatureCategory, 'Content');
+    case 'marketing':
+    case 'marketing / set up':
+      return encodeFeatureCategory(marketingFeatureCategory, 'Set up');
+    case 'marketing / manage':
+      return encodeFeatureCategory(marketingFeatureCategory, 'Manage');
     case 'distribution':
+    case 'distribution / set up':
     case 'support':
-      return distributionAndSupportFeatureCategory;
+    case 'distribution & support':
+      return encodeFeatureCategory(distributionFeatureCategory, 'Set up');
+    case 'distribution / manage':
+      return encodeFeatureCategory(distributionFeatureCategory, 'Manage');
     default:
       return category;
   }
+}
+
+String encodeFeatureCategory(String category, String? subcategory) {
+  final trimmedSubcategory = subcategory?.trim() ?? '';
+  return trimmedSubcategory.isEmpty
+      ? category.trim()
+      : '${category.trim()}$taskCategorySeparator$trimmedSubcategory';
+}
+
+({String category, String? subcategory}) parseFeatureCategory(String raw) {
+  final normalized = displayFeatureCategory(raw);
+  final separatorIndex = normalized.indexOf(taskCategorySeparator);
+  if (separatorIndex < 0) {
+    return (category: normalized, subcategory: null);
+  }
+  return (
+    category: normalized.substring(0, separatorIndex),
+    subcategory: normalized.substring(
+      separatorIndex + taskCategorySeparator.length,
+    ),
+  );
 }
 
 ({String category, String text}) parseFeature(String raw) {

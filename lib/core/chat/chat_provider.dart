@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../constants/enums.dart';
 import 'message_model.dart';
 import 'chat_firestore_service.dart';
 import 'msg91_service.dart';
@@ -9,16 +10,26 @@ class ChatProvider extends ChangeNotifier {
   final ChatFirestoreService _firestoreService;
   final MSG91Service? _msg91Service;
   final _sendLimiter = RateLimiter(interval: const Duration(milliseconds: 500));
-  int _retryCount = 0;
-  static const _maxRetries = 3;
 
+  List<Conversation> _allConversations = [];
   List<Conversation> _conversations = [];
+  List<Conversation> _archivedConversations = [];
   Conversation? _activeConversation;
   List<Message> _messages = [];
   bool _isLoading = false;
+  final bool _isLoadingMore = false;
+  bool _hasMoreConversations = true;
+  bool _isDisposed = false;
+  int? _totalWhatsappConversations;
+  int _totalArchivedConversations = 0;
+  Map<String, int> _stageConversationCounts = {};
+  Map<String, int> _archivedStageConversationCounts = {};
+  String? _conversationStage;
   String? _error;
-  StreamSubscription? _conversationsSub;
   StreamSubscription? _messagesSub;
+  StreamSubscription<List<Conversation>>? _conversationsSub;
+  Timer? _conversationRetryTimer;
+  int _conversationSession = 0;
 
   ChatProvider({
     required ChatFirestoreService firestoreService,
@@ -27,10 +38,18 @@ class ChatProvider extends ChangeNotifier {
        _msg91Service = msg91Service;
 
   List<Conversation> get conversations => _conversations;
+  List<Conversation> get archivedConversations => _archivedConversations;
   Conversation? get activeConversation => _activeConversation;
   MSG91Service? get msg91Service => _msg91Service;
   List<Message> get messages => _messages;
   bool get isLoading => _isLoading;
+  bool get isLoadingMore => _isLoadingMore == true;
+  bool get hasMoreConversations => _hasMoreConversations == true;
+  int? get totalWhatsappConversations => _totalWhatsappConversations;
+  int get totalArchivedConversations => _conversationStage == null
+      ? _totalArchivedConversations
+      : _archivedStageConversationCounts[_conversationStage] ?? 0;
+  Map<String, int> get stageConversationCounts => _stageConversationCounts;
   String? get error => _error;
 
   Future<Map<String, dynamic>?> getContact(String contactId) {
@@ -65,62 +84,141 @@ class ChatProvider extends ChangeNotifier {
       channel: current.channel,
       lastMessage: current.lastMessage,
       lastMessageAt: current.lastMessageAt,
+      lastMessageDirection: current.lastMessageDirection,
       unreadCount: 0,
       isActive: current.isActive,
+      isArchived: current.isArchived,
+      stage: current.stage,
       assignedTo: current.assignedTo,
       createdAt: current.createdAt,
     );
     notifyListeners();
   }
 
-  void loadConversations() {
-    _isLoading = true;
-    _retryCount = 0;
+  Future<void> loadConversations({String? stage}) async {
+    _conversationStage = stage;
     _error = null;
-    notifyListeners();
-
-    _startConversationsStream();
+    _watchAllConversations();
   }
 
-  void _startConversationsStream() {
+  void _watchAllConversations() {
+    _conversationRetryTimer?.cancel();
     _conversationsSub?.cancel();
-    final stream = _firestoreService.isConfigured
-      ? _firestoreService.watchConversations()
-      : _firestoreService.watchAllConversations();
-    _conversationsSub = stream.listen(
-      (list) {
-        _conversations = list;
-        _isLoading = false;
-        _error = null;
-        _retryCount = 0;
-        notifyListeners();
-      },
-      onError: (e) {
-        final errStr = e.toString();
-        debugPrint(
-          'ChatProvider: conversations error (retry $_retryCount/$_maxRetries): $errStr',
+    _isLoading = true;
+    _hasMoreConversations = false;
+    _conversationsSub = _firestoreService
+        .watchAllConversations(stage: _conversationStage)
+        .listen(
+          (conversations) {
+            if (_isDisposed) return;
+            _allConversations = conversations;
+            _isLoading = false;
+            _error = null;
+            _conversationRetryTimer?.cancel();
+            _applyConversationView();
+            notifyListeners();
+          },
+          onError: (Object error) {
+            if (_isDisposed) return;
+            _isLoading = false;
+            _error = 'Failed to load conversations: $error';
+            notifyListeners();
+            _conversationRetryTimer = Timer(
+              const Duration(seconds: 3),
+              _watchAllConversations,
+            );
+          },
         );
-        debugPrint(
-          'ChatProvider: clientId=${_firestoreService.isConfigured ? _firestoreService.currentClientId : "NOT CONFIGURED"}',
-        );
+    unawaited(_refreshConversationCounts());
+  }
 
-        if (errStr.contains('permission-denied') && _retryCount < _maxRetries) {
-          _retryCount++;
-          final delay = Duration(seconds: _retryCount * 2);
-          debugPrint('ChatProvider: retrying in ${delay.inSeconds}s...');
-          Future.delayed(delay, () {
-            _startConversationsStream();
-          });
-        } else {
-          _error = 'Failed to load conversations: $errStr';
-          _isLoading = false;
-          notifyListeners();
-        }
-      },
+  Future<void> _refreshConversationCounts() async {
+    try {
+      final stages = chatFunnelStages.map((stage) => stage.name).toList();
+      final results = await Future.wait([
+        _firestoreService.countActiveConversationsByStage(stages),
+        Future.wait(
+          stages.map(
+            (stage) => _firestoreService.countConversations(
+              stage: stage,
+              isArchived: true,
+            ),
+          ),
+        ),
+      ]);
+      if (_isDisposed) return;
+      _stageConversationCounts = results[0] as Map<String, int>;
+      final archivedCounts = results[1] as List<int>;
+      _archivedStageConversationCounts = {
+        for (var index = 0; index < stages.length; index++)
+          stages[index]: archivedCounts[index],
+      };
+      _totalWhatsappConversations = _stageConversationCounts.values.fold<int>(
+        0,
+        (total, amount) => total + amount,
+      );
+      _totalArchivedConversations = _archivedStageConversationCounts.values
+          .fold<int>(0, (total, amount) => total + amount);
+      notifyListeners();
+    } catch (_) {
+      // Counts are supplementary; conversations should remain usable.
+    }
+  }
+
+  void _applyConversationView() {
+    final active = <Conversation>[];
+    final archived = <Conversation>[];
+
+    for (final conversation in _allConversations) {
+      if (_conversationStage != null &&
+          conversation.stage != _conversationStage) {
+        continue;
+      }
+      (conversation.isArchived ? archived : active).add(conversation);
+    }
+
+    _conversations = active;
+    _archivedConversations = archived;
+  }
+
+  Future<void> loadMoreConversations() async {
+    return;
+  }
+
+  Future<void> updateClientConversationFilters({
+    required String ownerClientId,
+    required String stage,
+  }) {
+    return _firestoreService.updateClientConversationFilters(
+      ownerClientId: ownerClientId,
+      stage: stage,
+    );
+  }
+
+  Future<void> updateClientConversationArchive({
+    required String ownerClientId,
+    required Conversation conversation,
+    required bool isArchived,
+  }) async {
+    await _firestoreService.updateClientConversationArchive(
+      ownerClientId: ownerClientId,
+      conversationId: conversation.id,
+      isArchived: isArchived,
+    );
+  }
+
+  Future<void> updateConversationsArchive({
+    required List<Conversation> conversations,
+    required bool isArchived,
+  }) async {
+    await _firestoreService.updateConversationsArchive(
+      conversations: conversations,
+      isArchived: isArchived,
     );
   }
 
   void openConversation(Conversation conversation) {
+    final session = ++_conversationSession;
     _activeConversation = conversation;
     _messages = [];
     markConversationAsReadLocally(conversation.id);
@@ -128,42 +226,50 @@ class ChatProvider extends ChangeNotifier {
 
     _messagesSub?.cancel();
     _messagesSub = _firestoreService
-        .watchMessages(
-          conversation.id,
-          ownerClientId: conversation.clientId,
-        )
-        .listen((list) {
-      final hadNewInbound =
-          _msg91Service != null &&
-          list.any(
-            (m) =>
-                m.direction == MessageDirection.inbound &&
-                m.status == MessageStatus.delivered,
-          );
+        .watchMessages(conversation.id, ownerClientId: conversation.clientId)
+        .listen(
+          (list) {
+            if (_isDisposed ||
+                session != _conversationSession ||
+                _activeConversation?.id != conversation.id) {
+              return;
+            }
+            final hadNewInbound =
+                _msg91Service != null &&
+                list.any(
+                  (m) =>
+                      m.direction == MessageDirection.inbound &&
+                      m.status == MessageStatus.delivered,
+                );
 
-      _messages = list;
-      notifyListeners();
+            _messages = list;
+            notifyListeners();
 
-      if (hadNewInbound) {
-        _msg91Service
-            .markConversationRead(
-              conversationId: conversation.id,
-              clientId: conversation.clientId,
-            )
-            .catchError((e) {
-              debugPrint('Failed to send read receipts: $e');
-            });
-      }
-    }, onError: (Object error) {
-      _error = 'Failed to load messages: $error';
-      notifyListeners();
-    });
+            if (hadNewInbound) {
+              _msg91Service
+                  .markConversationRead(
+                    conversationId: conversation.id,
+                    clientId: conversation.clientId,
+                    viewedAt: DateTime.now(),
+                  )
+                  .catchError((e) {
+                    debugPrint('Failed to send read receipts: $e');
+                  });
+            }
+          },
+          onError: (Object error) {
+            if (_isDisposed || session != _conversationSession) return;
+            _error = 'Failed to load messages: $error';
+            notifyListeners();
+          },
+        );
 
     if (_msg91Service != null && conversation.unreadCount > 0) {
       _msg91Service
           .markConversationRead(
             conversationId: conversation.id,
             clientId: conversation.clientId,
+            viewedAt: DateTime.now(),
           )
           .catchError((e) {
             debugPrint('Failed to send read receipts: $e');
@@ -172,10 +278,11 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void closeConversation() {
+    _conversationSession++;
     _activeConversation = null;
     _messages = [];
     _messagesSub?.cancel();
-    notifyListeners();
+    _messagesSub = null;
   }
 
   Future<void> startQualificationAutomation(Conversation conversation) async {
@@ -332,6 +439,8 @@ class ChatProvider extends ChangeNotifier {
       direction: MessageDirection.outbound,
       type: template.type,
       content: displayContent,
+      mediaUrl: template.headerImageUrl,
+      mediaType: template.headerImageUrl == null ? null : 'image',
       status: MessageStatus.queued,
       senderName: 'You',
       createdAt: DateTime.now(),
@@ -354,6 +463,7 @@ class ChatProvider extends ChangeNotifier {
             for (var i = 0; i < paramValues.length; i++)
               '${i + 1}': paramValues[i],
           },
+          templateHeaderImageUrl: template.headerImageUrl,
           conversationId: _activeConversation!.id,
           messageDocId: msgId,
         );
@@ -363,6 +473,55 @@ class ChatProvider extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  Future<void> sendTemplateToConversation(
+    Conversation conversation,
+    MessageTemplate template,
+    List<String> paramValues, {
+    required String campaignId,
+  }) async {
+    var displayContent = template.content;
+    for (var index = 0; index < paramValues.length; index++) {
+      displayContent = displayContent.replaceAll(
+        '{{${index + 1}}}',
+        paramValues[index],
+      );
+    }
+
+    final message = Message(
+      id: 'msg-${DateTime.now().microsecondsSinceEpoch}',
+      conversationId: conversation.id,
+      contactId: conversation.contactId,
+      direction: MessageDirection.outbound,
+      type: template.type,
+      content: displayContent,
+      status: MessageStatus.queued,
+      senderName: 'You',
+      createdAt: DateTime.now(),
+    );
+    final messageId = await _firestoreService.sendMessage(
+      conversation.id,
+      message,
+      ownerClientId: conversation.clientId,
+    );
+    if (_msg91Service == null) {
+      throw StateError('Messaging service is unavailable');
+    }
+    await _msg91Service.sendWhatsAppMessage(
+      contactId: conversation.contactId,
+      content: displayContent,
+      clientId: conversation.clientId,
+      templateName: template.name,
+      templateParams: {
+        for (var index = 0; index < paramValues.length; index++)
+          '${index + 1}': paramValues[index],
+      },
+      templateHeaderImageUrl: template.headerImageUrl,
+      conversationId: conversation.id,
+      messageDocId: messageId,
+      campaignId: campaignId,
+    );
   }
 
   Future<void> sendMediaMessage({
@@ -378,6 +537,8 @@ class ChatProvider extends ChangeNotifier {
       MessageType.image => '[Image]',
       MessageType.sticker => '[Sticker]',
       MessageType.audio || MessageType.voiceNote => '[Audio]',
+      MessageType.video => '[Video]',
+      MessageType.document => '[Document]',
       _ => '[Media]',
     };
 
@@ -422,8 +583,10 @@ class ChatProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _conversationsSub?.cancel();
+    _isDisposed = true;
+    _conversationRetryTimer?.cancel();
     _messagesSub?.cancel();
+    _conversationsSub?.cancel();
     super.dispose();
   }
 }

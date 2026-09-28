@@ -7,7 +7,6 @@ import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/tasks/task_workflow.dart';
 import 'package:tulasisolutionssite/core/theme/app_theme.dart';
 import 'package:tulasisolutionssite/core/widgets/app_drawer.dart';
-import 'package:tulasisolutionssite/core/widgets/shared_widgets.dart';
 
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
@@ -18,6 +17,9 @@ class AdminDashboardScreen extends ConsumerWidget {
     final plansAsync = ref.watch(allPlansStreamProvider);
     final paymentsAsync = ref.watch(paymentsProvider);
     final currentUser = ref.watch(firebaseAuthServiceProvider).getCurrentUser();
+    final clients = clientsAsync.valueOrNull ?? const <Client>[];
+    final plans = plansAsync.valueOrNull ?? const <Plan>[];
+    final payments = paymentsAsync.valueOrNull ?? const <PaymentRecord>[];
 
     return AppShell(
       isAdmin: true,
@@ -34,26 +36,11 @@ class AdminDashboardScreen extends ConsumerWidget {
           },
         ),
       ],
-      body: clientsAsync.when(
-        loading: () => const LoadingWidget(),
-        error: (error, stackTrace) =>
-            CustomErrorWidget(message: 'Could not load dashboard: $error'),
-        data: (clients) => plansAsync.when(
-          loading: () => const LoadingWidget(),
-          error: (error, stackTrace) =>
-              CustomErrorWidget(message: 'Could not load plans: $error'),
-          data: (plans) => paymentsAsync.when(
-            loading: () => const LoadingWidget(),
-            error: (error, stackTrace) =>
-                CustomErrorWidget(message: 'Could not load payments: $error'),
-            data: (payments) => _DashboardContent(
-              clients: clients,
-              plans: plans,
-              payments: payments,
-              assigneeId: currentUser?.uid,
-            ),
-          ),
-        ),
+      body: _DashboardContent(
+        clients: clients,
+        plans: plans,
+        payments: payments,
+        assigneeId: currentUser?.uid,
       ),
     );
   }
@@ -230,11 +217,6 @@ class _DashboardContent extends StatelessWidget {
               label: 'Manage leads',
               icon: Icons.people_outline,
               route: '/admin/leads',
-            ),
-            _QuickLink(
-              label: 'View plans',
-              icon: Icons.receipt_long_outlined,
-              route: '/admin/plans',
             ),
             _QuickLink(
               label: 'Review payments',

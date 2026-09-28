@@ -5,6 +5,7 @@
 
 import axios, { AxiosError, AxiosRequestConfig } from "axios";
 import * as admin from "firebase-admin";
+import FormData from "form-data";
 
 // ── Base URLs ────────────────────────────────────────────────
 export const MSG91_BASE_URL = "https://control.msg91.com/api/v5";
@@ -69,9 +70,14 @@ const ERROR_MAP: Record<string, string> = {
 export function mapMSG91Error(statusCode: number, responseData: unknown): MSG91Error {
   const data = responseData as Record<string, unknown>;
   const rawCode = String(data?.code ?? data?.type ?? statusCode);
+  const providerMessage = typeof data?.message === "string" && data.message.trim()
+    ? data.message
+    : typeof data?.errors === "string" && data.errors.trim()
+      ? data.errors
+      : undefined;
   return {
     code: rawCode,
-    message: ERROR_MAP[rawCode] ?? (data?.message as string) ?? "Unknown MSG91 error",
+    message: ERROR_MAP[rawCode] ?? providerMessage ?? "Unknown MSG91 error",
     details: JSON.stringify(data),
   };
 }
@@ -128,4 +134,41 @@ export async function sendRequest<T = Record<string, unknown>>(
   }
 
   throw lastError ?? new Error("MSG91 request failed after retries");
+}
+
+export async function uploadWhatsAppSampleMedia(
+  mediaUrl: string,
+  integratedNumber: string,
+): Promise<string> {
+  const mediaResponse = await axios.get<ArrayBuffer>(mediaUrl, {
+    responseType: "arraybuffer",
+    timeout: 30_000,
+  });
+  const contentType = String(mediaResponse.headers["content-type"] ?? "image/jpeg");
+  const extension = contentType.includes("png") ? "png" : "jpg";
+  const form = new FormData();
+  form.append("whatsapp_number", integratedNumber);
+  form.append("media", Buffer.from(mediaResponse.data), {
+    filename: `template-header.${extension}`,
+    contentType,
+  });
+
+  const response = await axios.post<Record<string, unknown>>(
+    `${MSG91_WA_URL}/sample-media-upload/`,
+    form,
+    {
+      headers: {
+        authkey: getAuthKey(),
+        ...form.getHeaders(),
+      },
+      timeout: 30_000,
+      maxBodyLength: Infinity,
+    },
+  );
+  const data = response.data.data as Record<string, unknown> | undefined;
+  const handle = data?.url;
+  if (response.data.status !== "success" || typeof handle !== "string" || !handle) {
+    throw new Error(`MSG91 sample media upload failed: ${JSON.stringify(response.data)}`);
+  }
+  return handle;
 }

@@ -7,6 +7,7 @@ import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/constants/enums.dart';
 import 'package:tulasisolutionssite/core/widgets/shared_widgets.dart';
 import 'package:tulasisolutionssite/core/widgets/app_drawer.dart';
+import 'package:tulasisolutionssite/features/chat/lead_transfer.dart';
 import 'add_client_screen.dart';
 import '../client_profile/client_profile_screen.dart';
 
@@ -20,11 +21,13 @@ class ClientListScreen extends ConsumerStatefulWidget {
 class _ClientListScreenState extends ConsumerState<ClientListScreen> {
   ClientStage? _selectedStage = ClientStage.click;
   String _searchQuery = '';
+  bool _isTransferringLeads = false;
 
   bool get _hasSearchTerm => _searchQuery.length > 1;
 
   bool _matchesSearch(Client client) {
     final searchableDetails = [
+      client.clientCode,
       client.name,
       client.ownerName,
       client.category,
@@ -39,6 +42,18 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
     return searchableDetails.contains(_searchQuery);
   }
 
+  Future<void> _importLeads(List<Client> clients) async {
+    setState(() => _isTransferringLeads = true);
+    await importLeadFile(context: context, ref: ref, clients: clients);
+    if (mounted) setState(() => _isTransferringLeads = false);
+  }
+
+  Future<void> _exportLeads(List<Client> clients) async {
+    setState(() => _isTransferringLeads = true);
+    await exportLeadFile(context: context, clients: clients);
+    if (mounted) setState(() => _isTransferringLeads = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final clientsAsync = ref.watch(clientsListProvider);
@@ -48,6 +63,38 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
       currentRoute: '/admin/leads',
       title: 'Leads',
       actions: [
+        if (_isTransferringLeads)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          )
+        else ...[
+          TextButton.icon(
+            onPressed: clientsAsync.hasValue
+                ? () => _importLeads(clientsAsync.requireValue)
+                : null,
+            icon: const Icon(Icons.upload_file_outlined),
+            label: const Text('Import'),
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
+          ),
+          TextButton.icon(
+            onPressed: clientsAsync.hasValue
+                ? () => _exportLeads(clientsAsync.requireValue)
+                : null,
+            icon: const Icon(Icons.download_outlined),
+            label: const Text('Export'),
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
+          ),
+        ],
         IconButton(
           tooltip: 'Refresh',
           icon: const Icon(Icons.refresh),
@@ -60,7 +107,7 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
         data: (clients) {
           var stageClients = clients;
 
-          if (_selectedStage != null) {
+          if (_selectedStage != null && !_hasSearchTerm) {
             stageClients = stageClients
                 .where((c) => c.stage == _selectedStage)
                 .toList();
@@ -85,7 +132,7 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
                   children: [
                     TextField(
                       decoration: InputDecoration(
-                        hintText: 'Type at least 2 characters to search...',
+                        hintText: 'Search by code, name, phone, or details...',
                         prefixIcon: const Icon(Icons.search),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -98,9 +145,11 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
                           ...ClientStage.values
                               .where(
@@ -112,17 +161,14 @@ class _ClientListScreenState extends ConsumerState<ClientListScreen> {
                                 final count = clients
                                     .where((c) => c.stage == stage)
                                     .length;
-                                return Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: FilterChip(
-                                    label: Text(
-                                      '${stage.displayName} ($count)',
-                                    ),
-                                    selected: _selectedStage == stage,
-                                    onSelected: (_) {
-                                      setState(() => _selectedStage = stage);
-                                    },
+                                return FilterChip(
+                                  label: Text(
+                                    '${stage.displayName} ($count)',
                                   ),
+                                  selected: _selectedStage == stage,
+                                  onSelected: (_) {
+                                    setState(() => _selectedStage = stage);
+                                  },
                                 );
                               }),
                           FilterChip(
@@ -203,8 +249,6 @@ class ClientCard extends ConsumerWidget {
         return Colors.green;
       case ClientStage.retain:
         return Colors.teal;
-      case ClientStage.refer:
-        return Colors.pink;
       case ClientStage.lost:
         return Colors.red;
     }
@@ -459,6 +503,12 @@ class ClientCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
+            if (client.clientCode.isNotEmpty)
+              _detailLine(
+                Icons.tag_outlined,
+                'Code',
+                client.clientCode,
+              ),
             _detailLine(Icons.business, 'Business', client.name),
             if ((client.ownerName ?? client.assignedManager)
                     ?.trim()

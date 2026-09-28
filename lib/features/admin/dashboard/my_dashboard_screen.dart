@@ -5,6 +5,7 @@ import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/tasks/task_workflow.dart';
 import 'package:tulasisolutionssite/core/widgets/app_drawer.dart';
+import 'package:tulasisolutionssite/core/widgets/feature_progress_widgets.dart';
 import 'package:tulasisolutionssite/core/widgets/shared_widgets.dart';
 
 class MyDashboardScreen extends ConsumerWidget {
@@ -66,9 +67,7 @@ class _MyDashboardContent extends StatelessWidget {
     final byCategory = <String, int>{};
     for (final task in assigned) {
       final rawFeature = task.key.split('#').first;
-      final category = rawFeature.contains(': ')
-          ? rawFeature.split(': ').first
-          : 'General';
+      final category = parseFeature(rawFeature).category;
       byCategory[category] = (byCategory[category] ?? 0) + 1;
     }
 

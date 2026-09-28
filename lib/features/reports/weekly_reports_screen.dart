@@ -10,9 +10,7 @@ import 'package:tulasisolutionssite/core/widgets/app_drawer.dart';
 import 'package:tulasisolutionssite/core/widgets/shared_widgets.dart';
 
 class WeeklyReportsScreen extends ConsumerStatefulWidget {
-  final bool adminMode;
-
-  const WeeklyReportsScreen({super.key, required this.adminMode});
+  const WeeklyReportsScreen({super.key});
 
   @override
   ConsumerState<WeeklyReportsScreen> createState() =>
@@ -24,13 +22,8 @@ class _WeeklyReportsScreenState extends ConsumerState<WeeklyReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final clientAsync = ref.watch(currentClientProvider);
-    final clients = widget.adminMode
-        ? ref.watch(clientsListProvider).valueOrNull ?? const <Client>[]
-        : const <Client>[];
-    final clientId = widget.adminMode
-        ? _selectedClientId
-        : clientAsync.valueOrNull?.id;
+    final clients = ref.watch(clientsListProvider).valueOrNull ?? const <Client>[];
+    final clientId = _selectedClientId;
     final reports = clientId == null
         ? const AsyncValue<List<WeeklyReport>>.data([])
         : ref.watch(weeklyReportsProvider(clientId));
@@ -41,10 +34,10 @@ class _WeeklyReportsScreenState extends ConsumerState<WeeklyReportsScreen> {
         .firstOrNull;
 
     return AppShell(
-      isAdmin: widget.adminMode,
-      currentRoute: widget.adminMode ? '/admin/reports' : '/client/reports',
-      title: widget.adminMode ? 'Weekly Reports' : 'My Reports',
-      floatingActionButton: widget.adminMode && clientId != null
+      isAdmin: true,
+      currentRoute: '/admin/reports',
+      title: 'Weekly Reports',
+      floatingActionButton: clientId != null
           ? FloatingActionButton.extended(
               onPressed: () => _createReport(
                 context,
@@ -61,22 +54,20 @@ class _WeeklyReportsScreenState extends ConsumerState<WeeklyReportsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (widget.adminMode) ...[
-              DropdownButtonFormField<String>(
-                initialValue: _selectedClientId,
-                decoration: const InputDecoration(labelText: 'Client'),
-                items: clients
-                    .map(
-                      (client) => DropdownMenuItem(
-                        value: client.id,
-                        child: Text(client.name),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) => setState(() => _selectedClientId = value),
-              ),
-              const SizedBox(height: 16),
-            ],
+            DropdownButtonFormField<String>(
+              initialValue: _selectedClientId,
+              decoration: const InputDecoration(labelText: 'Client'),
+              items: clients
+                  .map(
+                    (client) => DropdownMenuItem(
+                      value: client.id,
+                      child: Text(client.name),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) => setState(() => _selectedClientId = value),
+            ),
+            const SizedBox(height: 16),
             Expanded(
               child: clientId == null
                   ? const Center(
@@ -88,22 +79,17 @@ class _WeeklyReportsScreenState extends ConsumerState<WeeklyReportsScreen> {
                         message: 'Could not load reports: $error',
                       ),
                       data: (items) {
-                        final visible = widget.adminMode
-                            ? items
-                            : items
-                                  .where((report) => report.published)
-                                  .toList();
-                        if (visible.isEmpty) {
+                        if (items.isEmpty) {
                           return const Center(
                             child: Text('No weekly reports yet.'),
                           );
                         }
                         return ListView.separated(
-                          itemCount: visible.length,
+                          itemCount: items.length,
                           separatorBuilder: (_, __) =>
                               const SizedBox(height: 8),
                           itemBuilder: (context, index) =>
-                              _ReportCard(report: visible[index]),
+                              _ReportCard(report: items[index]),
                         );
                       },
                     ),

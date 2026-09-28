@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:tulasisolutionssite/core/constants/test_access.dart';
 import 'package:tulasisolutionssite/core/access/panel_access.dart';
 import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
@@ -38,9 +37,14 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (isAdmin) {
-      final profileAsync = ref.watch(currentUserProfileStreamProvider);
+      final profileAsync = ref.watch(currentUserProfileProvider);
       if (profileAsync.isLoading) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      }
+      if (profileAsync.hasError) {
+        return _ProfileLoadError(
+          onRetry: () => ref.invalidate(currentUserProfileProvider),
+        );
       }
 
       final profile = profileAsync.valueOrNull;
@@ -117,6 +121,36 @@ class _PanelAccessRequired extends StatelessWidget {
   );
 }
 
+class _ProfileLoadError extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _ProfileLoadError({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Could not load your staff profile. Check your connection and try again.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try again'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class AppDrawer extends ConsumerWidget {
   final bool isAdmin;
   final String currentRoute;
@@ -137,9 +171,9 @@ class AppDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(firebaseAuthServiceProvider).getCurrentUser();
-    final profile = ref.watch(currentUserProfileStreamProvider).valueOrNull;
+    final profile = ref.watch(currentUserProfileProvider).valueOrNull;
     final hasPanelAccess = hasGrantedAdminPanel(profile);
-    final title = isAdmin ? 'Admin Panel' : 'Client Portal';
+    const title = 'Admin Panel';
     final email = user?.email ?? '';
     final clientId = GoRouter.of(context).state.pathParameters['clientId'];
     final clientAsync = clientId != null && clientId.isNotEmpty
@@ -205,7 +239,7 @@ class AppDrawer extends ConsumerWidget {
             child: ListView(
               padding: const EdgeInsets.only(top: 8),
               children: [
-                if (isAdmin && hasPanelAccess) ...[
+                if (hasPanelAccess) ...[
                   if (profile?.isAdmin ?? false)
                     _item(
                       context,
@@ -217,22 +251,8 @@ class AppDrawer extends ConsumerWidget {
                     _item(
                       context,
                       icon: Icons.task_alt,
-                      label: 'Manage Tasks',
+                      label: 'Assign Tasks',
                       route: '/admin/tasks',
-                    ),
-                  if (canAccessAdminPanel(profile, 'tasks'))
-                    _item(
-                      context,
-                      icon: Icons.summarize_outlined,
-                      label: 'Weekly Reports',
-                      route: '/admin/reports',
-                    ),
-                  if (canAccessAdminPanel(profile, 'salesTasks'))
-                    _item(
-                      context,
-                      icon: Icons.sell_outlined,
-                      label: 'Sales Tasks',
-                      route: '/admin/sales-tasks',
                     ),
                   if (canAccessAdminPanel(profile, 'chat'))
                     _item(
@@ -255,13 +275,6 @@ class AppDrawer extends ConsumerWidget {
                       label: 'Clients',
                       route: '/admin/consultations',
                     ),
-                  if (canAccessAdminPanel(profile, 'plans'))
-                    _item(
-                      context,
-                      icon: Icons.receipt_long_outlined,
-                      label: 'Plans',
-                      route: '/admin/plans',
-                    ),
                   if (canAccessAdminPanel(profile, 'payments'))
                     _item(
                       context,
@@ -283,9 +296,15 @@ class AppDrawer extends ConsumerWidget {
                       label: 'Performance',
                       route: '/admin/performance',
                     ),
+                  if (canAccessAdminPanel(profile, 'tasks'))
+                    _item(
+                      context,
+                      icon: Icons.summarize_outlined,
+                      label: 'Weekly Reports',
+                      route: '/admin/reports',
+                    ),
                     if (canAccessAdminPanel(profile, 'myDashboard') ||
                       canAccessAdminPanel(profile, 'myTasks') ||
-                      canAccessAdminPanel(profile, 'briefs') ||
                       canAccessAdminPanel(profile, 'myPerformance'))
                     const Padding(
                       padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
@@ -319,65 +338,7 @@ class AppDrawer extends ConsumerWidget {
                       label: 'My Tasks',
                       route: '/admin/my-tasks',
                     ),
-                  if (canAccessAdminPanel(profile, 'briefs'))
-                    _item(
-                      context,
-                      icon: Icons.description_outlined,
-                      label: 'Website Briefs',
-                      route: '/admin/website-briefs',
-                    ),
-                  if (canAccessAdminPanel(profile, 'briefs'))
-                    _item(
-                      context,
-                      icon: Icons.branding_watermark_outlined,
-                      label: 'Brand Briefs',
-                      route: '/admin/brand-briefs',
-                    ),
-                ] else ...[
-                  _item(
-                    context,
-                    icon: Icons.dashboard,
-                    label: 'Dashboard',
-                    route: '/client/dashboard',
-                  ),
-                  _item(
-                    context,
-                    icon: Icons.flag,
-                    label: 'My Goals',
-                    route: '/client/goals',
-                  ),
-                  _item(
-                    context,
-                    icon: Icons.task_alt,
-                    label: 'My Tasks',
-                    route: '/client/tasks',
-                  ),
-                  _item(
-                    context,
-                    icon: Icons.summarize_outlined,
-                    label: 'Weekly Reports',
-                    route: '/client/reports',
-                  ),
-                  _item(
-                    context,
-                    icon: Icons.description_outlined,
-                    label: 'Website Brief',
-                    route: '/client/website-brief',
-                  ),
-                  _item(
-                    context,
-                    icon: Icons.branding_watermark_outlined,
-                    label: 'Brand Brief',
-                    route: '/client/brand-brief',
-                  ),
                 ],
-                if (dualPanelTestEmails.contains(email.toLowerCase()))
-                  _item(
-                    context,
-                    icon: Icons.swap_horiz,
-                    label: isAdmin ? 'Client Panel' : 'Admin Panel',
-                    route: isAdmin ? '/client/dashboard' : '/admin/dashboard',
-                  ),
               ],
             ),
           ),

@@ -31,38 +31,52 @@ Plan emptyPlan() => Plan(
 void main() {
   group('plan task templates', () {
     test('uses the consolidated task categories for all plan types', () {
-      expect(visionAndPlanFeatureCategory, 'Vision & Plan & Goals & Promise');
+      expect(visionAndPlanFeatureCategory, 'Vision & Plan');
       expect(softwareFeatureCategory, 'Software');
-      expect(designFeatureCategory, 'Design, Brandkit & Posters');
-      expect(contentFeatureCategory, 'Content, Reels & Videos');
-      expect(distributionAndSupportFeatureCategory, 'Distribution & Support');
+      expect(contentFeatureCategory, 'Content');
+      expect(marketingFeatureCategory, 'Marketing');
+      expect(distributionFeatureCategory, 'Distribution');
       expect(allPlanFeatureCategories, [
-        'Practice',
         visionAndPlanFeatureCategory,
-        designFeatureCategory,
         softwareFeatureCategory,
         contentFeatureCategory,
-        distributionAndSupportFeatureCategory,
+        marketingFeatureCategory,
+        distributionFeatureCategory,
       ]);
-      expect(setupPlanFeatureCategories, allPlanFeatureCategories);
-      expect(subscriptionPlanFeatureCategories, allPlanFeatureCategories);
+      expect(planFeatureSubcategories[softwareFeatureCategory], ['App', 'Web']);
+      expect(planFeatureSubcategories[contentFeatureCategory], [
+        'Brand Kit',
+        'Video Kit',
+        'Content',
+      ]);
+      expect(planFeatureSubcategories[marketingFeatureCategory], [
+        'Set up',
+        'Manage',
+      ]);
+      expect(planFeatureSubcategories[distributionFeatureCategory], [
+        'Set up',
+        'Manage',
+      ]);
+      expect(setupPlanFeatureCategories, allPlanFeatureCategoryLabels);
+      expect(subscriptionPlanFeatureCategories, allPlanFeatureCategoryLabels);
       expect(customTaskFeatureCategories, allPlanFeatureCategories);
     });
 
     test('displays legacy task categories under the consolidated names', () {
       expect(displayFeatureCategory('Goals'), visionAndPlanFeatureCategory);
       expect(displayFeatureCategory('Promise'), visionAndPlanFeatureCategory);
-      expect(displayFeatureCategory('Website & App'), softwareFeatureCategory);
-      expect(displayFeatureCategory('Design'), designFeatureCategory);
-      expect(displayFeatureCategory('Content'), contentFeatureCategory);
+      expect(displayFeatureCategory('Website & App'), 'Software / Web');
+      expect(displayFeatureCategory('Software'), 'Software / Web');
+      expect(displayFeatureCategory('Practice'), 'Content / Brand Kit');
+      expect(displayFeatureCategory('Design'), 'Content / Brand Kit');
+      expect(displayFeatureCategory('Content'), 'Content / Content');
       expect(
         displayFeatureCategory('Distribution'),
-        distributionAndSupportFeatureCategory,
+        'Distribution / Set up',
       );
-      expect(
-        displayFeatureCategory('Support'),
-        distributionAndSupportFeatureCategory,
-      );
+      expect(displayFeatureCategory('Support'), 'Distribution / Set up');
+      expect(parseFeatureCategory('Software / App').category, 'Software');
+      expect(parseFeatureCategory('Software / App').subcategory, 'App');
     });
 
     test(

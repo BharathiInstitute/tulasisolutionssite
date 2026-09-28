@@ -68,9 +68,15 @@ async function resolveClientId(request) {
  */
 exports.markConversationRead = (0, https_1.onCall)(config_1.callableOptions, async (request) => {
     const clientId = await resolveClientId(request);
-    const { conversationId } = request.data;
+    const { conversationId, viewedAt } = request.data;
     if (!conversationId) {
         return { success: false, error: "conversationId is required" };
+    }
+    const viewedAtMs = typeof viewedAt === "string" ? Date.parse(viewedAt) : Number.NaN;
+    const viewAgeMs = Date.now() - viewedAtMs;
+    if (!Number.isFinite(viewedAtMs) || viewAgeMs < -30000 || viewAgeMs > 120000) {
+        logger.warn("markConversationRead ignored without a recent explicit view");
+        return { success: false, error: "Conversation is not actively open" };
     }
     try {
         // Get conversation doc to find the customer phone number

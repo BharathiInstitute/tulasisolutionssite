@@ -91,8 +91,11 @@ class MSG91Service {
     String? clientId,
     String? templateName,
     Map<String, String>? templateParams,
+    String? templateHeaderImageUrl,
+    Map<String, String>? templateButtonParams,
     String? conversationId,
     String? messageDocId,
+    String? campaignId,
   }) async {
     await _cf.call('enqueueMessage', {
       'contactId': contactId,
@@ -101,8 +104,13 @@ class MSG91Service {
       if (clientId != null) 'clientId': clientId,
       if (templateName != null) 'templateName': templateName,
       if (templateParams != null) 'templateParams': templateParams,
+      if (templateHeaderImageUrl != null)
+        'templateHeaderImageUrl': templateHeaderImageUrl,
+      if (templateButtonParams != null)
+        'templateButtonParams': templateButtonParams,
       if (conversationId != null) 'conversationId': conversationId,
       if (messageDocId != null) 'messageDocId': messageDocId,
+      if (campaignId != null) 'campaignId': campaignId,
     });
   }
 
@@ -160,10 +168,12 @@ class MSG91Service {
 
   Future<void> markConversationRead({
     required String conversationId,
+    required DateTime viewedAt,
     String? clientId,
   }) async {
     await _cf.call('markConversationRead', {
       'conversationId': conversationId,
+      'viewedAt': viewedAt.toUtc().toIso8601String(),
       if (clientId?.isNotEmpty == true) 'clientId': clientId,
     });
   }
@@ -176,11 +186,19 @@ class MSG91Service {
     });
   }
 
+  Future<void> updateOutreachCampaignStatus({
+    required String campaignId,
+    required String status,
+  }) async {
+    await _cf.call('updateOutreachCampaignStatus', {
+      'campaignId': campaignId,
+      'status': status,
+    });
+  }
+
   // ─── TEMPLATES ───────────────────────────────────────────
 
-  Future<List<MessageTemplate>> getTemplates({
-    String? channel,
-  }) async {
+  Future<List<MessageTemplate>> getTemplates({String? channel}) async {
     final result = await _cf.call('listTemplates', {
       if (channel != null) 'channel': channel,
     });
@@ -214,6 +232,9 @@ class MSG91Service {
     required String category,
     required String language,
     String? footer,
+    String? ctaUrl,
+    String? ctaLabel,
+    String? headerImageUrl,
   }) async {
     return _cf.call('submitWhatsAppTemplate', {
       'name': name,
@@ -221,6 +242,10 @@ class MSG91Service {
       'category': category,
       'language': language,
       if (footer?.isNotEmpty == true) 'footer': footer,
+      if (ctaUrl?.isNotEmpty == true) 'ctaUrl': ctaUrl,
+      if (ctaLabel?.isNotEmpty == true) 'ctaLabel': ctaLabel,
+      if (headerImageUrl?.isNotEmpty == true)
+        'headerImageUrl': headerImageUrl,
     });
   }
 }

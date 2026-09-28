@@ -17,20 +17,17 @@ const _internalPracticePlanId = '__internal_practice_tasks__';
 const _internalPracticeLabel = 'Practice (Internal)';
 
 class TasksScreen extends ConsumerWidget {
-  final bool salesOnly;
-
-  const TasksScreen({super.key, this.salesOnly = false});
+  const TasksScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final plansAsync = ref.watch(allPlansStreamProvider);
     final clientsAsync = ref.watch(clientsListProvider);
-    final salesTasksAsync = ref.watch(salesTasksProvider);
     final staff = ref.watch(allUsersProvider).valueOrNull ?? const <AppUser>[];
     return AppShell(
       isAdmin: true,
-      currentRoute: salesOnly ? '/admin/sales-tasks' : '/admin/tasks',
-      title: salesOnly ? 'Sales Tasks' : 'Manage Tasks',
+      currentRoute: '/admin/tasks',
+      title: 'Assign Tasks',
       actions: [
         IconButton(
           tooltip: 'Refresh',
@@ -44,17 +41,15 @@ class TasksScreen extends ConsumerWidget {
             onPressed: () async {
               await showDialog<void>(
                 context: context,
-                builder: (_) => salesOnly
-                    ? _SalesTaskDialog(clients: clients)
-                    : _CustomTaskDialog(
-                        plans: plans,
-                        clients: clients,
-                        staff: staff,
-                      ),
+                builder: (_) => _CustomTaskDialog(
+                  plans: plans,
+                  clients: clients,
+                  staff: staff,
+                ),
               );
             },
-            icon: Icon(salesOnly ? Icons.add_call : Icons.add_task_outlined),
-            label: Text(salesOnly ? 'Add Sales Task' : 'Add Task'),
+            icon: const Icon(Icons.add_task_outlined),
+            label: const Text('Add Task'),
           ),
           orElse: () => null,
         ),
@@ -68,20 +63,12 @@ class TasksScreen extends ConsumerWidget {
           loading: () => const LoadingWidget(),
           error: (error, stackTrace) =>
               CustomErrorWidget(message: 'Error loading clients: $error'),
-          data: (clients) => salesTasksAsync.when(
-            loading: () => const LoadingWidget(),
-            error: (error, stackTrace) =>
-                CustomErrorWidget(message: 'Error loading sales tasks: $error'),
-            data: (salesTasks) => _TaskOverview(
-              plans: plans,
-              salesTasks: salesTasks,
-              clients: clients,
-              staff: staff,
-              salesOnly: salesOnly,
-              clientNames: {
-                for (final client in clients) client.id: client.name,
-              },
-            ),
+          data: (clients) => _TaskOverview(
+            plans: plans,
+            staff: staff,
+            clientNames: {
+              for (final client in clients) client.id: client.name,
+            },
           ),
         ),
       ),
@@ -109,6 +96,7 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
   final _reasonController = TextEditingController();
   String? _clientId;
   String? _category;
+  String? _subcategory;
   String? _assignedTo;
   String _priority = 'normal';
   DateTime? _dueAt;
@@ -150,12 +138,17 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
     final plan = _selectedPlan;
     final title = _titleController.text.trim();
     final reason = _reasonController.text.trim();
+    final subcategories = _category == null
+        ? const <String>[]
+        : planFeatureSubcategories[_category] ?? const <String>[];
     if (_clientId == null ||
         title.isEmpty ||
         _category == null ||
+        (subcategories.isNotEmpty && _subcategory == null) ||
         reason.isEmpty) {
       setState(
-        () => _error = 'Client, title, category, and reason are required.',
+        () => _error =
+            'Client, title, category, subcategory, and reason are required.',
       );
       return;
     }
@@ -180,7 +173,7 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
           );
       final task = ClientTask(
         id: const Uuid().v4(),
-        category: _category!,
+        category: encodeFeatureCategory(_category!, _subcategory),
         title: title,
         order: targetPlan.tasks.length,
         source: ClientTaskSource.customIncluded,
@@ -229,7 +222,6 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
     const taskStages = {
       ClientStage.client,
       ClientStage.retain,
-      ClientStage.refer,
     };
     final taskClients =
         widget.clients
@@ -252,7 +244,7 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
                 initialValue: _clientId,
                 decoration: const InputDecoration(labelText: 'Client'),
                 hint: taskClients.isEmpty
-                    ? const Text('No Sales, Retain, or Refer clients found')
+                  ? const Text('No Won or Retain / Refer clients found')
                     : null,
                 items:
                     taskClients
@@ -272,9 +264,8 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
                       ),
                 onChanged: (clientId) => setState(() {
                   _clientId = clientId;
-                  _category = clientId == _internalPracticeClientId
-                      ? 'Practice'
-                      : null;
+                  _category = null;
+                  _subcategory = null;
                 }),
               ),
               const SizedBox(height: 12),
@@ -294,8 +285,33 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
                       ),
                     )
                     .toList(),
-                onChanged: (category) => setState(() => _category = category),
+                onChanged: (category) => setState(() {
+                  _category = category;
+                  final options = category == null
+                      ? const <String>[]
+                      : planFeatureSubcategories[category] ?? const <String>[];
+                  _subcategory = options.firstOrNull;
+                }),
               ),
+              if (_category != null &&
+                  (planFeatureSubcategories[_category] ?? const []).isNotEmpty) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  key: ValueKey('create-subcategory-$_category'),
+                  initialValue: _subcategory,
+                  decoration: const InputDecoration(labelText: 'Subcategory'),
+                  items: [
+                    for (final subcategory
+                        in planFeatureSubcategories[_category]!)
+                      DropdownMenuItem(
+                        value: subcategory,
+                        child: Text(subcategory),
+                      ),
+                  ],
+                  onChanged: (subcategory) =>
+                      setState(() => _subcategory = subcategory),
+                ),
+              ],
               const SizedBox(height: 12),
               DropdownButtonFormField<String?>(
                 initialValue: _assignedTo,
@@ -373,521 +389,14 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
   }
 }
 
-class _SalesTaskDialog extends ConsumerStatefulWidget {
-  final List<Client> clients;
-  final SalesTask? existing;
-
-  const _SalesTaskDialog({required this.clients, this.existing});
-
-  @override
-  ConsumerState<_SalesTaskDialog> createState() => _SalesTaskDialogState();
-}
-
-class _SalesTaskDialogState extends ConsumerState<_SalesTaskDialog> {
-  static const _categories = ['Call', 'Meeting'];
-  static const _statuses = [
-    SalesTaskStatus.notStarted,
-    SalesTaskStatus.completed,
-  ];
-
-  final _titleController = TextEditingController();
-  final _notesController = TextEditingController();
-  final _outcomeController = TextEditingController();
-  String? _clientId;
-  String _category = _categories.first;
-  String _priority = 'normal';
-  SalesTaskStatus _status = SalesTaskStatus.notStarted;
-  DateTime? _dueAt;
-  String? _error;
-  bool _isSaving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final task = widget.existing;
-    _clientId = task?.clientId;
-    _titleController.text = task?.title ?? '';
-    _notesController.text = task?.notes ?? '';
-    _outcomeController.text = task?.outcome ?? '';
-    _category = task?.category ?? _categories.first;
-    _priority = task?.priority ?? 'normal';
-    _status = _statuses.contains(task?.status)
-        ? task!.status
-        : SalesTaskStatus.notStarted;
-    _dueAt = task?.dueAt;
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _notesController.dispose();
-    _outcomeController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDueDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _dueAt ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
-    );
-    if (picked != null) setState(() => _dueAt = picked);
-  }
-
-  Future<void> _save() async {
-    final title = _titleController.text.trim();
-    if (_clientId == null || title.isEmpty) {
-      setState(() => _error = 'Client and task title are required.');
-      return;
-    }
-    setState(() {
-      _isSaving = true;
-      _error = null;
-    });
-    try {
-      final now = DateTime.now();
-      final existing = widget.existing;
-      final task = SalesTask(
-        id: existing?.id ?? const Uuid().v4(),
-        clientId: _clientId!,
-        title: title,
-        category: _category,
-        priority: _priority,
-        status: _status,
-        notes: _notesController.text.trim(),
-        outcome: _outcomeController.text.trim(),
-        isArchived: existing?.isArchived ?? false,
-        dueAt: _dueAt,
-        completedAt: _status == SalesTaskStatus.completed
-            ? existing?.completedAt ?? now
-            : null,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      );
-      if (existing == null) {
-        await ref.read(firestoreServiceProvider).createSalesTask(task);
-      } else {
-        await ref.read(firestoreServiceProvider).updateSalesTask(task);
-      }
-      if (mounted) Navigator.pop(context);
-    } catch (error) {
-      if (mounted) setState(() => _error = 'Could not save task: $error');
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final eligibleClients = widget.clients
-        .where(
-          (client) =>
-              client.stage == ClientStage.consult ||
-              client.stage == ClientStage.followUp,
-        )
-        .toList();
-    final dueDateText = _dueAt == null
-        ? 'No due date'
-        : MaterialLocalizations.of(context).formatShortDate(_dueAt!);
-    return AlertDialog(
-      title: Text(
-        widget.existing == null ? 'Add Sales Task' : 'Edit Sales Task',
-      ),
-      content: SizedBox(
-        width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue:
-                    eligibleClients.any((client) => client.id == _clientId)
-                    ? _clientId
-                    : null,
-                decoration: const InputDecoration(labelText: 'Client'),
-                hint: eligibleClients.isEmpty
-                    ? const Text('No clients available')
-                    : null,
-                items: eligibleClients
-                    .map(
-                      (client) => DropdownMenuItem(
-                        value: client.id,
-                        child: Text(client.name),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (clientId) => setState(() => _clientId = clientId),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _titleController,
-                decoration: const InputDecoration(labelText: 'Task title'),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _category,
-                decoration: const InputDecoration(labelText: 'Activity type'),
-                items: _categories
-                    .map(
-                      (category) => DropdownMenuItem(
-                        value: category,
-                        child: Text(category),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (category) => setState(() => _category = category!),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _priority,
-                      decoration: const InputDecoration(labelText: 'Priority'),
-                      items: const [
-                        DropdownMenuItem(value: 'low', child: Text('Low')),
-                        DropdownMenuItem(
-                          value: 'normal',
-                          child: Text('Normal'),
-                        ),
-                        DropdownMenuItem(value: 'high', child: Text('High')),
-                        DropdownMenuItem(
-                          value: 'urgent',
-                          child: Text('Urgent'),
-                        ),
-                      ],
-                      onChanged: (priority) =>
-                          setState(() => _priority = priority!),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<SalesTaskStatus>(
-                      initialValue: _status,
-                      decoration: const InputDecoration(labelText: 'Status'),
-                      items: _statuses
-                          .map(
-                            (status) => DropdownMenuItem(
-                              value: status,
-                              child: Text(status.label),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (status) => setState(() => _status = status!),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(dueDateText),
-                leading: const Icon(Icons.event_outlined),
-                trailing: _dueAt == null
-                    ? const Icon(Icons.calendar_today_outlined)
-                    : IconButton(
-                        tooltip: 'Clear due date',
-                        icon: const Icon(Icons.clear),
-                        onPressed: () => setState(() => _dueAt = null),
-                      ),
-                onTap: _pickDueDate,
-              ),
-              TextField(
-                controller: _notesController,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Notes'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _outcomeController,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Outcome'),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                Text(_error!, style: const TextStyle(color: Colors.red)),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        if (widget.existing != null)
-          TextButton.icon(
-            onPressed: _isSaving
-                ? null
-                : () async {
-                    await ref
-                        .read(firestoreServiceProvider)
-                        .deleteSalesTask(widget.existing!.id);
-                    if (context.mounted) Navigator.pop(context);
-                  },
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            label: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        TextButton(
-          onPressed: _isSaving ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _isSaving ? null : _save,
-          child: _isSaving
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Save'),
-        ),
-      ],
-    );
-  }
-}
-
-class _SalesTaskSection extends StatefulWidget {
-  final List<SalesTask> tasks;
-  final List<Client> clients;
-  final bool showSummary;
-
-  const _SalesTaskSection({
-    required this.tasks,
-    required this.clients,
-    this.showSummary = true,
-  });
-
-  @override
-  State<_SalesTaskSection> createState() => _SalesTaskSectionState();
-}
-
-class _SalesTaskSectionState extends State<_SalesTaskSection> {
-  bool _showCompleted = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final activeTasks = widget.tasks.where((task) => !task.isArchived).toList();
-    final archivedTasks = widget.tasks
-        .where((task) => task.isArchived)
-        .toList();
-    final visibleTasks =
-        activeTasks
-            .where(
-              (task) =>
-                  (task.status == SalesTaskStatus.completed) == _showCompleted,
-            )
-            .toList()
-          ..sort(
-            (a, b) => (a.dueAt ?? DateTime(2100)).compareTo(
-              b.dueAt ?? DateTime(2100),
-            ),
-          );
-    final clientsById = {
-      for (final client in widget.clients) client.id: client,
-    };
-    final toDoCount = activeTasks
-        .where((task) => task.status != SalesTaskStatus.completed)
-        .length;
-    final completedCount = activeTasks
-        .where((task) => task.status == SalesTaskStatus.completed)
-        .length;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (widget.showSummary) ...[
-          _TaskSummaryCard(
-            title: 'Sales Tasks',
-            total: activeTasks.length,
-            counts: {
-              for (final status in SalesTaskStatus.values)
-                status.label: activeTasks
-                    .where((task) => task.status == status)
-                    .length,
-              'Archived': archivedTasks.length,
-            },
-          ),
-          const SizedBox(height: 10),
-        ],
-        Wrap(
-          spacing: 8,
-          children: [
-            ChoiceChip(
-              label: Text('To do ($toDoCount)'),
-              selected: !_showCompleted,
-              onSelected: (_) => setState(() => _showCompleted = false),
-            ),
-            ChoiceChip(
-              label: Text('Completed ($completedCount)'),
-              selected: _showCompleted,
-              onSelected: (_) => setState(() => _showCompleted = true),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (visibleTasks.isEmpty)
-          Text(
-            _showCompleted
-                ? 'No completed sales tasks yet.'
-                : 'No sales tasks to do.',
-          )
-        else
-          for (final task in visibleTasks)
-            _SalesTaskRow(
-              task: task,
-              client: clientsById[task.clientId],
-              clients: widget.clients,
-            ),
-        const SizedBox(height: 16),
-        Card(
-          clipBehavior: Clip.antiAlias,
-          child: ExpansionTile(
-            leading: const Icon(Icons.archive_outlined),
-            title: Text('Archived (${archivedTasks.length})'),
-            children: [
-              if (archivedTasks.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Text('No archived sales tasks'),
-                )
-              else
-                for (final task in archivedTasks)
-                  _SalesTaskRow(
-                    task: task,
-                    client: clientsById[task.clientId],
-                    clients: widget.clients,
-                  ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SalesTaskRow extends ConsumerWidget {
-  final SalesTask task;
-  final Client? client;
-  final List<Client> clients;
-
-  const _SalesTaskRow({
-    required this.task,
-    required this.client,
-    required this.clients,
-  });
-
-  Future<void> _setArchived(
-    BuildContext context,
-    WidgetRef ref,
-    bool isArchived,
-  ) async {
-    try {
-      await ref
-          .read(firestoreServiceProvider)
-          .updateSalesTask(
-            task.copyWith(isArchived: isArchived, updatedAt: DateTime.now()),
-          );
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isArchived ? '${task.title} archived' : '${task.title} restored',
-            ),
-          ),
-        );
-      }
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update archive: $error')),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final priorityColors = priorityBadgeColors(task.priority);
-    final dueText = task.dueAt == null
-        ? 'No due date'
-        : 'Due ${MaterialLocalizations.of(context).formatShortDate(task.dueAt!)}';
-    final clientName = client?.name ?? 'Unknown client';
-    final ownerName = client?.ownerName?.trim();
-    final phoneNumber = client?.contactPhone.trim();
-    final details = [
-      clientName,
-      if (ownerName != null && ownerName.isNotEmpty) ownerName,
-      if (phoneNumber != null && phoneNumber.isNotEmpty) phoneNumber,
-      task.category,
-      task.status.label,
-      dueText,
-    ];
-    return Card(
-      color: priorityColors.$1,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: priorityColors.$2.withValues(alpha: 0.28)),
-      ),
-      child: ListTile(
-        leading: Icon(
-          task.status == SalesTaskStatus.completed
-              ? Icons.check_circle
-              : Icons.sell_outlined,
-          color: task.status == SalesTaskStatus.completed
-              ? Colors.green
-              : priorityColors.$2,
-        ),
-        title: Text(task.title),
-        subtitle: Text(details.join(' • ')),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Chip(
-              backgroundColor: Colors.white.withValues(alpha: 0.65),
-              side: BorderSide.none,
-              label: Text(
-                priorityLabel(task.priority),
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: priorityColors.$2,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: task.isArchived
-                  ? 'Restore sales task'
-                  : 'Archive sales task',
-              icon: Icon(
-                task.isArchived
-                    ? Icons.unarchive_outlined
-                    : Icons.archive_outlined,
-              ),
-              onPressed: () => _setArchived(context, ref, !task.isArchived),
-            ),
-          ],
-        ),
-        onTap: () => showDialog<void>(
-          context: context,
-          builder: (_) => _SalesTaskDialog(clients: clients, existing: task),
-        ),
-      ),
-    );
-  }
-}
-
 class _TaskOverview extends StatefulWidget {
   final List<Plan> plans;
-  final List<SalesTask> salesTasks;
-  final List<Client> clients;
   final List<AppUser> staff;
-  final bool salesOnly;
   final Map<String, String> clientNames;
 
   const _TaskOverview({
     required this.plans,
-    required this.salesTasks,
-    required this.clients,
     required this.staff,
-    required this.salesOnly,
     required this.clientNames,
   });
 
@@ -958,7 +467,7 @@ class _TaskOverviewState extends State<_TaskOverview> {
         user.uid: user.name.isEmpty ? user.email : user.name,
     };
     final totalTasks = activeItems.length;
-    if (categories.isEmpty && !widget.salesOnly) {
+    if (categories.isEmpty) {
       return const Center(child: Text('No tasks found in assigned plans'));
     }
 
@@ -966,48 +475,18 @@ class _TaskOverviewState extends State<_TaskOverview> {
       padding: const EdgeInsets.all(16),
       children: [
         _TaskSummaryCard(
-          title: widget.salesOnly ? 'Sales Tasks' : 'Manage Tasks',
-          total: widget.salesOnly
-              ? widget.salesTasks.where((task) => !task.isArchived).length
-              : visibleItems.length,
-          counts: widget.salesOnly
-              ? {
-                  'To do': widget.salesTasks
-                      .where(
-                        (task) =>
-                            !task.isArchived &&
-                            task.status == SalesTaskStatus.notStarted,
-                      )
-                      .length,
-                  'Completed': widget.salesTasks
-                      .where(
-                        (task) =>
-                            !task.isArchived &&
-                            task.status == SalesTaskStatus.completed,
-                      )
-                      .length,
-                  'Archived': widget.salesTasks
-                      .where((task) => task.isArchived)
-                      .length,
-                }
-              : {
-                  'Active': totalTasks,
-                  'Completed': completedCount,
-                  'Archived': archivedItems.length,
-                  for (final entry in categories.entries)
-                    entry.key: entry.value
-                        .where((task) => !task.isArchived)
-                        .length,
-                },
+          title: 'Assign Tasks',
+          total: visibleItems.length,
+          counts: {
+            'Active': totalTasks,
+            'Completed': completedCount,
+            'Archived': archivedItems.length,
+            for (final entry in categories.entries)
+              entry.key: entry.value.where((task) => !task.isArchived).length,
+          },
         ),
         const SizedBox(height: 16),
-        if (widget.salesOnly)
-          _SalesTaskSection(
-            tasks: widget.salesTasks,
-            clients: widget.clients,
-            showSummary: false,
-          )
-        else ...[
+        ...[
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -1797,9 +1276,13 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
   late DraftCycleStage _draftStage;
   late List<Map<String, dynamic>> _drafts;
   late String _priority;
+  late String _category;
+  String? _subcategory;
+  late final TextEditingController _titleController;
   late final TextEditingController _internalNotesController;
   DateTime? _dueAt;
   String? _assignedTo;
+  String? _error;
   bool _saving = false;
 
   bool get _awaitingAdminReview =>
@@ -1926,6 +1409,16 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
   @override
   void initState() {
     super.initState();
+    final parsedFeature = parseFeature(widget.task.rawFeature);
+    final categorySelection = parseFeatureCategory(parsedFeature.category);
+    _category = customTaskFeatureCategories.contains(categorySelection.category)
+      ? categorySelection.category
+      : customTaskFeatureCategories.first;
+    final subcategories = planFeatureSubcategories[_category] ?? const <String>[];
+    _subcategory = subcategories.contains(categorySelection.subcategory)
+      ? categorySelection.subcategory
+      : subcategories.firstOrNull;
+    _titleController = TextEditingController(text: parsedFeature.text);
     _drafts = taskCycles(widget.task.plan, widget.task.workflowKey)
         .where((draft) => (draft['cycle'] as num?) != null)
         .map((draft) => Map<String, dynamic>.from(draft))
@@ -1950,6 +1443,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
 
   @override
   void dispose() {
+    _titleController.dispose();
     _internalNotesController.dispose();
     super.dispose();
   }
@@ -1965,6 +1459,18 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
   }
 
   Future<void> _save() async {
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      setState(() => _error = 'Task title is required.');
+      return;
+    }
+    final encodedCategory = encodeFeatureCategory(_category, _subcategory);
+    final newFeature = encodePlanTaskFeature(encodedCategory, title);
+    if (newFeature != widget.task.rawFeature &&
+        widget.task.plan.features.contains(newFeature)) {
+      setState(() => _error = 'A task with this category and title exists.');
+      return;
+    }
     _syncDraftStatuses();
     if (_status == TaskStatus.draftCycle) {
       _syncCurrentDraftStage();
@@ -1977,12 +1483,22 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
       );
       return;
     }
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final renamedPlan = renamePlanTask(
+      widget.task.plan,
+      widget.task.rawFeature,
+      category: encodedCategory,
+      title: title,
+    );
+    final workflowKey = taskKey(newFeature, widget.task.unitIndex);
     final cyclesUpdated = _drafts.isEmpty
-        ? setTaskStatus(widget.task.plan, widget.task.workflowKey, _status)
+        ? setTaskStatus(renamedPlan, workflowKey, _status)
         : replaceTaskWorkflowCycles(
-            widget.task.plan,
-            widget.task.workflowKey,
+            renamedPlan,
+            workflowKey,
             _drafts,
           );
     final assignedUser = widget.staff
@@ -1990,10 +1506,14 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
         .firstOrNull;
     final assigned = updateTaskAssignment(
       cyclesUpdated,
-      widget.task.workflowKey,
-      assignedTo: widget.lockedAssigneeId ?? assignedUser?.uid,
+      workflowKey,
+      assignedTo: _status == TaskStatus.notAssigned
+          ? null
+          : (widget.lockedAssigneeId ?? assignedUser?.uid),
       assignedToName: assignedUser == null
-          ? widget.lockedAssigneeName
+          ? (_status == TaskStatus.notAssigned
+            ? null
+            : widget.lockedAssigneeName)
           : (assignedUser.name.isEmpty
                 ? assignedUser.email
                 : assignedUser.name),
@@ -2001,7 +1521,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
     );
     final updated = updateTaskManagementDetails(
       assigned,
-      widget.task.workflowKey,
+      workflowKey,
       dueAt: _dueAt,
       internalNotes: _internalNotesController.text,
     );
@@ -2043,13 +1563,53 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                widget.task.displayText,
-                style: Theme.of(context).textTheme.titleLarge,
+              TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(labelText: 'Task title'),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _category,
+                decoration: const InputDecoration(labelText: 'Category'),
+                items: [
+                  for (final category in customTaskFeatureCategories)
+                    DropdownMenuItem(
+                      value: category,
+                      child: Text(category, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _category = value;
+                      final options =
+                          planFeatureSubcategories[value] ?? const <String>[];
+                      _subcategory = options.firstOrNull;
+                    });
+                  }
+                },
+              ),
+              if ((planFeatureSubcategories[_category] ?? const []).isNotEmpty) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  key: ValueKey('edit-subcategory-$_category'),
+                  initialValue: _subcategory,
+                  decoration: const InputDecoration(labelText: 'Subcategory'),
+                  items: [
+                    for (final subcategory
+                        in planFeatureSubcategories[_category]!)
+                      DropdownMenuItem(
+                        value: subcategory,
+                        child: Text(subcategory),
+                      ),
+                  ],
+                  onChanged: (subcategory) =>
+                      setState(() => _subcategory = subcategory),
+                ),
+              ],
+              const SizedBox(height: 8),
               Text(
-                '${parseFeature(widget.task.rawFeature).category} • ${widget.clientName}',
+                widget.clientName,
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700),
@@ -2103,7 +1663,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 240,
+                    width: 220,
                     child: DropdownButtonFormField<String>(
                       initialValue: _priority,
                       decoration: const InputDecoration(labelText: 'Priority'),
@@ -2124,8 +1684,41 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                       },
                     ),
                   ),
+                  SizedBox(
+                    width: 220,
+                    child: DropdownButtonFormField<TaskStatus>(
+                      initialValue: _status,
+                      decoration: const InputDecoration(labelText: 'Status'),
+                      items: [
+                        for (final status in TaskStatus.values)
+                          if (widget.lockedAssigneeId == null ||
+                              status != TaskStatus.notAssigned)
+                            DropdownMenuItem(
+                              value: status,
+                              child: Text(status.label),
+                            ),
+                      ],
+                      onChanged: (status) {
+                        if (status == null) return;
+                        setState(() {
+                          _status = status;
+                          if (status == TaskStatus.notAssigned) {
+                            _assignedTo = null;
+                          }
+                          _syncDraftStatuses();
+                        });
+                      },
+                    ),
+                  ),
                 ],
               ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
               if (_awaitingAdminReview) ...[
                 const SizedBox(height: 10),
                 Text(
@@ -2344,3 +1937,4 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
     );
   }
 }
+
