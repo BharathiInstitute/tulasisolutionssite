@@ -275,9 +275,20 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                       TextButton(
                                         onPressed: _isLoading
                                             ? null
-                                            : () => context.push(
-                                                '/forgot-password',
-                                              ),
+                                            : () {
+                                                final email = _emailController
+                                                    .text
+                                                    .trim();
+                                                context.push(
+                                                  Uri(
+                                                    path: '/forgot-password',
+                                                    queryParameters:
+                                                        email.isEmpty
+                                                        ? null
+                                                        : {'email': email},
+                                                  ).toString(),
+                                                );
+                                              },
                                         style: TextButton.styleFrom(
                                           foregroundColor: deepGreen,
                                           padding: EdgeInsets.zero,

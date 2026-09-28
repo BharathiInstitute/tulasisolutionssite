@@ -43,11 +43,7 @@ final router = GoRouter(
   redirect: (context, state) async {
     final user = FirebaseAuth.instance.currentUser;
     final location = state.matchedLocation;
-    const publicLocations = {
-      '/login',
-      '/admin/login',
-      '/forgot-password',
-    };
+    const publicLocations = {'/login', '/admin/login', '/forgot-password'};
 
     if (!authStateNotifier.hasResolvedInitialState) {
       return null;
@@ -58,9 +54,7 @@ final router = GoRouter(
       return publicLocations.contains(location) ? null : '/admin/login';
     }
 
-    if (location == '/' ||
-        location == '/login' ||
-        location == '/admin/login') {
+    if (location == '/' || location == '/login' || location == '/admin/login') {
       return '/auth-guard';
     }
 
@@ -75,7 +69,9 @@ final router = GoRouter(
     ),
     GoRoute(
       path: '/forgot-password',
-      builder: (context, state) => const ForgotPasswordScreen(),
+      builder: (context, state) => ForgotPasswordScreen(
+        initialEmail: state.uri.queryParameters['email'] ?? '',
+      ),
     ),
     GoRoute(
       path: '/account-details',
@@ -170,8 +166,16 @@ final router = GoRouter(
       builder: (context, state) => const TasksScreen(),
     ),
     GoRoute(
+      path: '/admin/completed-tasks',
+      builder: (context, state) => const CompletedTasksScreen(),
+    ),
+    GoRoute(
       path: '/admin/my-tasks',
       builder: (context, state) => const MyAssignedTasksScreen(),
+    ),
+    GoRoute(
+      path: '/admin/my-completed-tasks',
+      builder: (context, state) => const MyCompletedTasksScreen(),
     ),
     GoRoute(
       path: '/admin/reports',

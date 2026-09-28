@@ -402,6 +402,7 @@ void main() {
       );
       expect(taskTimerIsRunning(stopped, key), isFalse);
       expect(taskElapsedTime(stopped, key), const Duration(minutes: 30));
+      expect(taskCompletedAt(stopped, key), isNull);
 
       final resumed = setTaskTimerRunning(
         stopped,
@@ -430,11 +431,55 @@ void main() {
         },
       );
 
-      final completed = setTaskStatus(plan, key, TaskStatus.completed);
+      final completedAt = DateTime(2026, 9, 16, 12);
+      final completed = setTaskStatus(
+        plan,
+        key,
+        TaskStatus.completed,
+        now: completedAt,
+      );
 
       expect(taskStatus(completed, key), TaskStatus.completed);
+      expect(taskCompletedAt(completed, key), completedAt);
       expect(taskCycles(completed, key), hasLength(1));
       expect(completed.taskWorkflow[key]?['cycles'], isNull);
+
+      final reopened = setTaskStatus(
+        completed,
+        key,
+        TaskStatus.assigned,
+        now: DateTime(2026, 9, 17),
+      );
+      expect(taskCompletedAt(reopened, key), isNull);
+    });
+
+    test('completing a draft cycle records its completion time', () {
+      const key = 'content#1';
+      final completedAt = DateTime(2026, 9, 16, 12);
+      final plan = Plan(
+        id: 'plan-1',
+        clientId: 'client-1',
+        type: PlanType.setup,
+        name: 'Starter',
+        price: 0,
+        features: const ['Content: 1 reel'],
+        startDate: DateTime(2024, 1, 1),
+        taskWorkflow: const {
+          key: {
+            'status': 'draftCycle',
+            'cycles': [
+              {'cycle': 1, 'status': 'draftCycle'},
+            ],
+          },
+        },
+      );
+
+      final completed = replaceTaskWorkflowCycles(plan, key, const [
+        {'cycle': 1, 'status': 'completed'},
+      ], now: completedAt);
+
+      expect(taskStatus(completed, key), TaskStatus.completed);
+      expect(taskCompletedAt(completed, key), completedAt);
     });
 
     test('updating a work link preserves the draft workflow', () {

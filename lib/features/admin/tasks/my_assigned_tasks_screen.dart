@@ -30,6 +30,36 @@ class MyAssignedTasksScreen extends ConsumerWidget {
               data: (plans) => _ClientTaskList(
                 plans: plans,
                 assigneeId: currentUser.uid,
+                completedOnly: false,
+              ),
+            ),
+    );
+  }
+}
+
+class MyCompletedTasksScreen extends ConsumerWidget {
+  const MyCompletedTasksScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentUser = ref.watch(firebaseAuthServiceProvider).getCurrentUser();
+    final plansAsync = ref.watch(allPlansStreamProvider);
+
+    return AppShell(
+      isAdmin: true,
+      currentRoute: '/admin/my-completed-tasks',
+      title: 'My Completed Tasks',
+      body: currentUser == null
+          ? const Center(child: Text('No completed tasks yet'))
+          : plansAsync.when(
+              loading: () => const LoadingWidget(),
+              error: (error, stackTrace) => CustomErrorWidget(
+                message: 'Error loading your completed tasks: $error',
+              ),
+              data: (plans) => _ClientTaskList(
+                plans: plans,
+                assigneeId: currentUser.uid,
+                completedOnly: true,
               ),
             ),
     );
@@ -39,19 +69,25 @@ class MyAssignedTasksScreen extends ConsumerWidget {
 class _ClientTaskList extends StatefulWidget {
   final List<Plan> plans;
   final String? assigneeId;
+  final bool completedOnly;
 
   const _ClientTaskList({
     required this.plans,
     this.assigneeId,
+    required this.completedOnly,
   });
 
   @override
   State<_ClientTaskList> createState() => _ClientTaskListState();
 }
 
+enum _MyCompletedPeriod { day, week, month, custom }
+
 class _ClientTaskListState extends State<_ClientTaskList> {
   String? _selectedCategory;
-  bool? _completedFilter = false;
+  _MyCompletedPeriod? _completedPeriod;
+  DateTimeRange? _customCompletedRange;
+  DateTime _completedPeriodAnchor = DateUtils.dateOnly(DateTime.now());
 
   @override
   Widget build(BuildContext context) {
@@ -90,21 +126,23 @@ class _ClientTaskListState extends State<_ClientTaskList> {
     if (activeRows.isEmpty && archivedRows.isEmpty) {
       return const Center(child: Text('No tasks assigned yet'));
     }
+    final modeRows = activeRows
+        .where((row) => row.completed == widget.completedOnly)
+        .toList();
     final categoryCounts = <String, int>{};
-    for (final row in activeRows) {
+    for (final row in modeRows) {
       categoryCounts[row.category] = (categoryCounts[row.category] ?? 0) + 1;
     }
     final categories = categoryCounts.keys.toList()..sort();
-    final completedCount = activeRows.where((row) => row.completed).length;
     final selectedCategory = categoryCounts.containsKey(_selectedCategory)
         ? _selectedCategory
         : null;
-    final visibleRows = activeRows.where((row) {
-      if (_completedFilter != null && row.completed != _completedFilter) {
-        return false;
-      }
-      return selectedCategory == null || row.category == selectedCategory;
-    }).toList();
+    final visibleRows = modeRows
+        .where(_matchesCompletedPeriod)
+        .where(
+          (row) => selectedCategory == null || row.category == selectedCategory,
+        )
+        .toList();
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -112,7 +150,74 @@ class _ClientTaskListState extends State<_ClientTaskList> {
         Wrap(
           spacing: 8,
           runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            if (widget.completedOnly)
+              SizedBox(
+                width: 210,
+                child: DropdownButtonFormField<_MyCompletedPeriod>(
+                  initialValue: _completedPeriod,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Completed period',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: null, child: Text('All')),
+                    DropdownMenuItem(
+                      value: _MyCompletedPeriod.day,
+                      child: Text('Today'),
+                    ),
+                    DropdownMenuItem(
+                      value: _MyCompletedPeriod.week,
+                      child: Text('This week'),
+                    ),
+                    DropdownMenuItem(
+                      value: _MyCompletedPeriod.month,
+                      child: Text('This month'),
+                    ),
+                    DropdownMenuItem(
+                      value: _MyCompletedPeriod.custom,
+                      child: Text('Custom'),
+                    ),
+                  ],
+                  onChanged: _selectCompletedPeriod,
+                ),
+              ),
+            if (widget.completedOnly && _completedPeriod != null)
+              Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Previous period',
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: () => _moveCompletedPeriod(-1),
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 90),
+                      child: Text(
+                        _completedPeriodLabel(context),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Next period',
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: _canMoveToNextCompletedPeriod
+                          ? () => _moveCompletedPeriod(1)
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
             for (final category in categories)
               FilterChip(
                 label: Text('$category (${categoryCounts[category]})'),
@@ -122,24 +227,14 @@ class _ClientTaskListState extends State<_ClientTaskList> {
                     _selectedCategory = selectedCategory == category
                         ? null
                         : category;
-                    _completedFilter = false;
                   });
                 },
               ),
             FilterChip(
-              label: Text('Completed ($completedCount)'),
-              selected: _completedFilter == true,
-              onSelected: (selected) => setState(() {
-                _completedFilter = selected ? true : false;
-                if (selected) _selectedCategory = null;
-              }),
-            ),
-            FilterChip(
-              label: Text('All (${activeRows.length})'),
-              selected: selectedCategory == null && _completedFilter == null,
+              label: Text('All (${modeRows.length})'),
+              selected: selectedCategory == null,
               onSelected: (_) => setState(() {
                 _selectedCategory = null;
-                _completedFilter = null;
               }),
             ),
           ],
@@ -159,36 +254,160 @@ class _ClientTaskListState extends State<_ClientTaskList> {
           ),
           if (index < visibleRows.length - 1) const SizedBox(height: 2),
         ],
-        const SizedBox(height: 16),
-        Card(
-          clipBehavior: Clip.antiAlias,
-          child: ExpansionTile(
-            leading: const Icon(Icons.archive_outlined),
-            title: Text('Archived (${archivedRows.length})'),
-            children: [
-              if (archivedRows.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Text('No archived tasks'),
-                )
-              else
-                for (final row in archivedRows)
-                  TaskRow(
-                    task: TaskItem(
-                      rawFeature: row.rawFeature,
-                      plan: row.plan,
-                      unitIndex: row.unitIndex,
-                      unitTotal: row.unitTotal,
+        if (!widget.completedOnly) ...[
+          const SizedBox(height: 16),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: ExpansionTile(
+              leading: const Icon(Icons.archive_outlined),
+              title: Text('Archived (${archivedRows.length})'),
+              children: [
+                if (archivedRows.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Text('No archived tasks'),
+                  )
+                else
+                  for (final row in archivedRows)
+                    TaskRow(
+                      task: TaskItem(
+                        rawFeature: row.rawFeature,
+                        plan: row.plan,
+                        unitIndex: row.unitIndex,
+                        unitTotal: row.unitTotal,
+                      ),
+                      category: row.category,
+                      clientName: 'My task',
+                      lockedAssigneeId: widget.assigneeId,
                     ),
-                    category: row.category,
-                    clientName: 'My task',
-                    lockedAssigneeId: widget.assigneeId,
-                  ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ],
     );
+  }
+
+  Future<void> _selectCompletedPeriod(_MyCompletedPeriod? period) async {
+    if (period != _MyCompletedPeriod.custom) {
+      setState(() {
+        _completedPeriod = period;
+        _customCompletedRange = null;
+        _completedPeriodAnchor = DateUtils.dateOnly(DateTime.now());
+      });
+      return;
+    }
+
+    final today = DateUtils.dateOnly(DateTime.now());
+    final selectedRange = await showDateRangePicker(
+      context: context,
+      initialDateRange:
+          _customCompletedRange ?? DateTimeRange(start: today, end: today),
+      firstDate: DateTime(2020),
+      lastDate: today,
+      helpText: 'Select completed date range',
+    );
+    if (selectedRange == null || !mounted) return;
+    setState(() {
+      _completedPeriod = _MyCompletedPeriod.custom;
+      _customCompletedRange = selectedRange;
+    });
+  }
+
+  DateTimeRange? get _completedDateRange {
+    final period = _completedPeriod;
+    if (period == null) return null;
+    return switch (period) {
+      _MyCompletedPeriod.day => DateTimeRange(
+        start: _completedPeriodAnchor,
+        end: _completedPeriodAnchor,
+      ),
+      _MyCompletedPeriod.week => () {
+        final start = _completedPeriodAnchor.subtract(
+          Duration(days: _completedPeriodAnchor.weekday - DateTime.monday),
+        );
+        return DateTimeRange(
+          start: start,
+          end: start.add(const Duration(days: 6)),
+        );
+      }(),
+      _MyCompletedPeriod.month => DateTimeRange(
+        start: DateTime(
+          _completedPeriodAnchor.year,
+          _completedPeriodAnchor.month,
+        ),
+        end: DateTime(
+          _completedPeriodAnchor.year,
+          _completedPeriodAnchor.month + 1,
+          0,
+        ),
+      ),
+      _MyCompletedPeriod.custom => _customCompletedRange,
+    };
+  }
+
+  bool get _canMoveToNextCompletedPeriod {
+    final range = _completedDateRange;
+    if (range == null) return false;
+    return DateUtils.dateOnly(range.end).isBefore(
+      DateUtils.dateOnly(DateTime.now()),
+    );
+  }
+
+  void _moveCompletedPeriod(int direction) {
+    final period = _completedPeriod;
+    if (period == null) return;
+    setState(() {
+      switch (period) {
+        case _MyCompletedPeriod.day:
+          _completedPeriodAnchor = _completedPeriodAnchor.add(
+            Duration(days: direction),
+          );
+        case _MyCompletedPeriod.week:
+          _completedPeriodAnchor = _completedPeriodAnchor.add(
+            Duration(days: 7 * direction),
+          );
+        case _MyCompletedPeriod.month:
+          _completedPeriodAnchor = DateTime(
+            _completedPeriodAnchor.year,
+            _completedPeriodAnchor.month + direction,
+          );
+        case _MyCompletedPeriod.custom:
+          final range = _customCompletedRange;
+          if (range == null) return;
+          final days = range.end.difference(range.start).inDays + 1;
+          var start = range.start.add(Duration(days: days * direction));
+          var end = range.end.add(Duration(days: days * direction));
+          final today = DateUtils.dateOnly(DateTime.now());
+          if (direction > 0 && end.isAfter(today)) {
+            start = start.subtract(end.difference(today));
+            end = today;
+          }
+          _customCompletedRange = DateTimeRange(start: start, end: end);
+      }
+    });
+  }
+
+  String _completedPeriodLabel(BuildContext context) {
+    final range = _completedDateRange;
+    if (range == null) return '';
+    final localizations = MaterialLocalizations.of(context);
+    if (_completedPeriod == _MyCompletedPeriod.month) {
+      return localizations.formatMonthYear(range.start);
+    }
+    final start = localizations.formatShortDate(range.start);
+    final end = localizations.formatShortDate(range.end);
+    return start == end ? start : '$start - $end';
+  }
+
+  bool _matchesCompletedPeriod(_ClientTaskItem row) {
+    if (!widget.completedOnly || _completedPeriod == null) return true;
+    final completedAt = taskCompletedAt(row.plan, row.key)?.toLocal();
+    final range = _completedDateRange;
+    if (completedAt == null || range == null) return false;
+    final completedDay = DateUtils.dateOnly(completedAt);
+    return !completedDay.isBefore(range.start) &&
+        !completedDay.isAfter(range.end);
   }
 }
 

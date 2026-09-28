@@ -254,6 +254,13 @@ class AppDrawer extends ConsumerWidget {
                       label: 'Assign Tasks',
                       route: '/admin/tasks',
                     ),
+                  if (canAccessAdminPanel(profile, 'tasks'))
+                    _item(
+                      context,
+                      icon: Icons.check_circle_outline,
+                      label: 'Completed Tasks',
+                      route: '/admin/completed-tasks',
+                    ),
                   if (canAccessAdminPanel(profile, 'chat'))
                     _item(
                       context,
@@ -337,6 +344,13 @@ class AppDrawer extends ConsumerWidget {
                       icon: Icons.assignment_ind_outlined,
                       label: 'My Tasks',
                       route: '/admin/my-tasks',
+                    ),
+                  if (canAccessAdminPanel(profile, 'myTasks'))
+                    _item(
+                      context,
+                      icon: Icons.task_alt,
+                      label: 'My Completed Tasks',
+                      route: '/admin/my-completed-tasks',
                     ),
                 ],
               ],

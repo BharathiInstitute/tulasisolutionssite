@@ -66,6 +66,48 @@ class TasksScreen extends ConsumerWidget {
           data: (clients) => _TaskOverview(
             plans: plans,
             staff: staff,
+            completedOnly: false,
+            clientNames: {
+              for (final client in clients) client.id: client.name,
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class CompletedTasksScreen extends ConsumerWidget {
+  const CompletedTasksScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final plansAsync = ref.watch(allPlansStreamProvider);
+    final clientsAsync = ref.watch(clientsListProvider);
+    final staff = ref.watch(allUsersProvider).valueOrNull ?? const <AppUser>[];
+    return AppShell(
+      isAdmin: true,
+      currentRoute: '/admin/completed-tasks',
+      title: 'Completed Tasks',
+      actions: [
+        IconButton(
+          tooltip: 'Refresh',
+          icon: const Icon(Icons.refresh),
+          onPressed: () => ref.invalidate(allPlansStreamProvider),
+        ),
+      ],
+      body: plansAsync.when(
+        loading: () => const LoadingWidget(),
+        error: (error, stackTrace) =>
+            CustomErrorWidget(message: 'Error loading tasks: $error'),
+        data: (plans) => clientsAsync.when(
+          loading: () => const LoadingWidget(),
+          error: (error, stackTrace) =>
+              CustomErrorWidget(message: 'Error loading clients: $error'),
+          data: (clients) => _TaskOverview(
+            plans: plans,
+            staff: staff,
+            completedOnly: true,
             clientNames: {
               for (final client in clients) client.id: client.name,
             },
@@ -393,25 +435,30 @@ class _TaskOverview extends StatefulWidget {
   final List<Plan> plans;
   final List<AppUser> staff;
   final Map<String, String> clientNames;
+  final bool completedOnly;
 
   const _TaskOverview({
     required this.plans,
     required this.staff,
     required this.clientNames,
+    required this.completedOnly,
   });
 
   @override
   State<_TaskOverview> createState() => _TaskOverviewState();
 }
 
+enum _CompletedPeriod { day, week, month, custom }
+
 class _TaskOverviewState extends State<_TaskOverview> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
-  String? _selectedPlanId;
   String? _selectedClientId;
   String? _selectedStaffId;
   String? _selectedCategory;
-  bool? _showCompleted = false;
+  _CompletedPeriod? _completedPeriod;
+  DateTimeRange? _customCompletedRange;
+  DateTime _completedPeriodAnchor = DateUtils.dateOnly(DateTime.now());
 
   @override
   void dispose() {
@@ -456,9 +503,20 @@ class _TaskOverviewState extends State<_TaskOverview> {
     final activeItems = visibleItems
         .where((task) => !task.isWorkflowCompleted)
         .toList();
-    final planOptions = <String, Plan>{
-      for (final task in allItems) task.plan.id: task.plan,
-    };
+    final completedItems = visibleItems
+      .where((task) => task.isWorkflowCompleted)
+      .toList();
+    final displayedItems = widget.completedOnly ? completedItems : activeItems;
+    final availableCategories = categories.entries
+      .where(
+        (entry) => entry.value.any(
+        (task) =>
+          !task.isArchived &&
+          task.isWorkflowCompleted == widget.completedOnly,
+        ),
+      )
+      .map((entry) => entry.key)
+      .toList();
     final clientOptions = <String, String>{
       for (final task in allItems) task.plan.clientId: _clientName(task.plan),
     };
@@ -466,7 +524,6 @@ class _TaskOverviewState extends State<_TaskOverview> {
       for (final user in widget.staff)
         user.uid: user.name.isEmpty ? user.email : user.name,
     };
-    final totalTasks = activeItems.length;
     if (categories.isEmpty) {
       return const Center(child: Text('No tasks found in assigned plans'));
     }
@@ -475,14 +532,23 @@ class _TaskOverviewState extends State<_TaskOverview> {
       padding: const EdgeInsets.all(16),
       children: [
         _TaskSummaryCard(
-          title: 'Assign Tasks',
-          total: visibleItems.length,
+          title: widget.completedOnly ? 'Completed Tasks' : 'Assign Tasks',
+          total: displayedItems.length,
           counts: {
-            'Active': totalTasks,
-            'Completed': completedCount,
-            'Archived': archivedItems.length,
-            for (final entry in categories.entries)
-              entry.key: entry.value.where((task) => !task.isArchived).length,
+            if (widget.completedOnly)
+              'Completed': completedCount
+            else ...{
+              'Active': activeItems.length,
+              'Archived': archivedItems.length,
+            },
+            for (final category in availableCategories)
+              category: categories[category]!
+                  .where(
+                    (task) =>
+                        !task.isArchived &&
+                        task.isWorkflowCompleted == widget.completedOnly,
+                  )
+                  .length,
           },
         ),
         const SizedBox(height: 16),
@@ -514,15 +580,6 @@ class _TaskOverviewState extends State<_TaskOverview> {
                 ),
               ),
               _TaskFilterDropdown(
-                label: 'Plan',
-                value: _selectedPlanId,
-                items: [
-                  for (final plan in planOptions.values)
-                    DropdownMenuItem(value: plan.id, child: Text(plan.name)),
-                ],
-                onChanged: (value) => setState(() => _selectedPlanId = value),
-              ),
-              _TaskFilterDropdown(
                 label: 'Client',
                 value: _selectedClientId,
                 items: [
@@ -546,17 +603,73 @@ class _TaskOverviewState extends State<_TaskOverview> {
                 ],
                 onChanged: (value) => setState(() => _selectedStaffId = value),
               ),
+              if (widget.completedOnly)
+                _TaskFilterDropdown(
+                  label: 'Completed period',
+                  value: _completedPeriod,
+                  items: const [
+                    DropdownMenuItem(
+                      value: _CompletedPeriod.day,
+                      child: Text('Today'),
+                    ),
+                    DropdownMenuItem(
+                      value: _CompletedPeriod.week,
+                      child: Text('This week'),
+                    ),
+                    DropdownMenuItem(
+                      value: _CompletedPeriod.month,
+                      child: Text('This month'),
+                    ),
+                    DropdownMenuItem(
+                      value: _CompletedPeriod.custom,
+                      child: Text('Custom'),
+                    ),
+                  ],
+                  onChanged: _selectCompletedPeriod,
+                ),
+              if (widget.completedOnly && _completedPeriod != null)
+                Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Previous period',
+                        icon: const Icon(Icons.chevron_left),
+                        onPressed: () => _moveCompletedPeriod(-1),
+                      ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 90),
+                        child: Text(
+                          _completedPeriodLabel(context),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Next period',
+                        icon: const Icon(Icons.chevron_right),
+                        onPressed: _canMoveToNextCompletedPeriod
+                            ? () => _moveCompletedPeriod(1)
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
               _TaskFilterDropdown(
                 label: 'Task category',
                 value: _selectedCategory,
                 items: [
-                  for (final category in categories.keys)
+                  for (final category in availableCategories)
                     DropdownMenuItem(value: category, child: Text(category)),
                 ],
-                onChanged: (value) => setState(() {
-                  _selectedCategory = value;
-                  _showCompleted = value == null ? false : null;
-                }),
+                onChanged: (value) => setState(() => _selectedCategory = value),
               ),
               if (_hasDeliveryFilters)
                 TextButton.icon(
@@ -576,11 +689,7 @@ class _TaskOverviewState extends State<_TaskOverview> {
               final selectedTasks = selectedEntries
                   .expand((entry) => entry.value)
                   .where((task) => !task.isArchived)
-                  .where(
-                    (task) =>
-                        _showCompleted == null ||
-                        task.isWorkflowCompleted == _showCompleted,
-                  )
+                  .where(_matchesTaskStatusFilters)
                   .where(_matchesDeliveryFilters)
                   .toList();
               final completed = selectedTasks
@@ -602,23 +711,24 @@ class _TaskOverviewState extends State<_TaskOverview> {
                   for (final entry in selectedEntries)
                     for (final task in entry.value.where(
                       (task) =>
-                          !task.isArchived && _matchesDeliveryFilters(task),
+                          !task.isArchived &&
+                          _matchesTaskStatusFilters(task) &&
+                          _matchesDeliveryFilters(task),
                     ))
-                      if (_showCompleted == null ||
-                          task.isWorkflowCompleted == _showCompleted)
-                        TaskRow(
-                          task: task,
-                          category: entry.key,
-                          clientName: _clientName(task.plan),
-                        ),
+                      TaskRow(
+                        task: task,
+                        category: entry.key,
+                        clientName: _clientName(task.plan),
+                      ),
                 ],
               );
             },
           ),
-          _ArchivedTasksSection(
-            tasks: archivedItems,
-            clientNameFor: _clientName,
-          ),
+          if (!widget.completedOnly)
+            _ArchivedTasksSection(
+              tasks: archivedItems,
+              clientNameFor: _clientName,
+            ),
         ],
       ],
     );
@@ -635,28 +745,153 @@ class _TaskOverviewState extends State<_TaskOverview> {
 
   bool get _hasDeliveryFilters =>
       _searchQuery.isNotEmpty ||
-      _selectedPlanId != null ||
       _selectedClientId != null ||
       _selectedStaffId != null ||
       _selectedCategory != null ||
-      _showCompleted != false;
+      _completedPeriod != null;
 
   void _clearDeliveryFilters() {
     setState(() {
       _searchController.clear();
       _searchQuery = '';
-      _selectedPlanId = null;
       _selectedClientId = null;
       _selectedStaffId = null;
       _selectedCategory = null;
-      _showCompleted = false;
+      _completedPeriod = null;
+      _customCompletedRange = null;
+      _completedPeriodAnchor = DateUtils.dateOnly(DateTime.now());
     });
   }
 
-  bool _matchesDeliveryFilters(TaskItem task) {
-    if (_selectedPlanId != null && task.plan.id != _selectedPlanId) {
-      return false;
+  Future<void> _selectCompletedPeriod(_CompletedPeriod? period) async {
+    if (period != _CompletedPeriod.custom) {
+      setState(() {
+        _completedPeriod = period;
+        _customCompletedRange = null;
+        _completedPeriodAnchor = DateUtils.dateOnly(DateTime.now());
+      });
+      return;
     }
+
+    final today = DateUtils.dateOnly(DateTime.now());
+    final selectedRange = await showDateRangePicker(
+      context: context,
+      initialDateRange:
+          _customCompletedRange ?? DateTimeRange(start: today, end: today),
+      firstDate: DateTime(2020),
+      lastDate: today,
+      helpText: 'Select completed date range',
+    );
+    if (selectedRange == null || !mounted) return;
+    setState(() {
+      _completedPeriod = _CompletedPeriod.custom;
+      _customCompletedRange = selectedRange;
+    });
+  }
+
+  DateTimeRange? get _completedDateRange {
+    final period = _completedPeriod;
+    if (period == null) return null;
+    return switch (period) {
+      _CompletedPeriod.day => DateTimeRange(
+        start: _completedPeriodAnchor,
+        end: _completedPeriodAnchor,
+      ),
+      _CompletedPeriod.week => () {
+        final start = _completedPeriodAnchor.subtract(
+          Duration(days: _completedPeriodAnchor.weekday - DateTime.monday),
+        );
+        return DateTimeRange(
+          start: start,
+          end: start.add(const Duration(days: 6)),
+        );
+      }(),
+      _CompletedPeriod.month => DateTimeRange(
+        start: DateTime(
+          _completedPeriodAnchor.year,
+          _completedPeriodAnchor.month,
+        ),
+        end: DateTime(
+          _completedPeriodAnchor.year,
+          _completedPeriodAnchor.month + 1,
+          0,
+        ),
+      ),
+      _CompletedPeriod.custom => _customCompletedRange,
+    };
+  }
+
+  bool get _canMoveToNextCompletedPeriod {
+    final range = _completedDateRange;
+    if (range == null) return false;
+    return DateUtils.dateOnly(range.end).isBefore(
+      DateUtils.dateOnly(DateTime.now()),
+    );
+  }
+
+  void _moveCompletedPeriod(int direction) {
+    final period = _completedPeriod;
+    if (period == null) return;
+    setState(() {
+      switch (period) {
+        case _CompletedPeriod.day:
+          _completedPeriodAnchor = _completedPeriodAnchor.add(
+            Duration(days: direction),
+          );
+        case _CompletedPeriod.week:
+          _completedPeriodAnchor = _completedPeriodAnchor.add(
+            Duration(days: 7 * direction),
+          );
+        case _CompletedPeriod.month:
+          _completedPeriodAnchor = DateTime(
+            _completedPeriodAnchor.year,
+            _completedPeriodAnchor.month + direction,
+          );
+        case _CompletedPeriod.custom:
+          final range = _customCompletedRange;
+          if (range == null) return;
+          final days = range.end.difference(range.start).inDays + 1;
+          var start = range.start.add(Duration(days: days * direction));
+          var end = range.end.add(Duration(days: days * direction));
+          final today = DateUtils.dateOnly(DateTime.now());
+          if (direction > 0 && end.isAfter(today)) {
+            start = start.subtract(end.difference(today));
+            end = today;
+          }
+          _customCompletedRange = DateTimeRange(start: start, end: end);
+      }
+    });
+  }
+
+  String _completedPeriodLabel(BuildContext context) {
+    final range = _completedDateRange;
+    if (range == null) return '';
+    final localizations = MaterialLocalizations.of(context);
+    if (_completedPeriod == _CompletedPeriod.month) {
+      return localizations.formatMonthYear(range.start);
+    }
+    final start = localizations.formatShortDate(range.start);
+    final end = localizations.formatShortDate(range.end);
+    return start == end ? start : '$start - $end';
+  }
+
+  bool _matchesTaskStatusFilters(TaskItem task) {
+    if (task.isWorkflowCompleted != widget.completedOnly) return false;
+    if (!widget.completedOnly || _completedPeriod == null) {
+      return true;
+    }
+
+    final completedAt = taskCompletedAt(task.plan, task.workflowKey)?.toLocal();
+    if (completedAt == null) return false;
+    final completedDay = DateUtils.dateOnly(completedAt);
+    final range = _completedDateRange;
+    if (range == null) return false;
+    final start = DateUtils.dateOnly(range.start);
+    final end = DateUtils.dateOnly(range.end);
+    return !completedDay.isBefore(start) && !completedDay.isAfter(end);
+  }
+
+  bool _matchesDeliveryFilters(TaskItem task) {
     if (_selectedClientId != null && task.plan.clientId != _selectedClientId) {
       return false;
     }
@@ -682,11 +917,11 @@ class _TaskOverviewState extends State<_TaskOverview> {
       : widget.clientNames[plan.clientId] ?? 'Unknown client';
 }
 
-class _TaskFilterDropdown extends StatelessWidget {
+class _TaskFilterDropdown<T> extends StatelessWidget {
   final String label;
-  final String? value;
-  final List<DropdownMenuItem<String>> items;
-  final ValueChanged<String?> onChanged;
+  final T? value;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
 
   const _TaskFilterDropdown({
     required this.label,
@@ -698,7 +933,7 @@ class _TaskFilterDropdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     width: 210,
-    child: DropdownButtonFormField<String>(
+    child: DropdownButtonFormField<T>(
       initialValue: value,
       isExpanded: true,
       decoration: InputDecoration(labelText: label),
@@ -1512,8 +1747,8 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
           : (widget.lockedAssigneeId ?? assignedUser?.uid),
       assignedToName: assignedUser == null
           ? (_status == TaskStatus.notAssigned
-            ? null
-            : widget.lockedAssigneeName)
+        ? null
+        : widget.lockedAssigneeName)
           : (assignedUser.name.isEmpty
                 ? assignedUser.email
                 : assignedUser.name),
@@ -1589,7 +1824,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                   }
                 },
               ),
-              if ((planFeatureSubcategories[_category] ?? const []).isNotEmpty) ...[
+                if ((planFeatureSubcategories[_category] ?? const []).isNotEmpty) ...[
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   key: ValueKey('edit-subcategory-$_category'),
@@ -1937,4 +2172,3 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
     );
   }
 }
-

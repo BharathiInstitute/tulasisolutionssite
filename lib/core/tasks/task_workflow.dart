@@ -188,13 +188,13 @@ Plan setTaskTimerRunning(
     'timerRunning': isRunning,
     'elapsedMilliseconds': elapsed.inMilliseconds,
     'startedAt': isRunning ? changedAt.toIso8601String() : null,
-    'completedAt': isRunning ? null : changedAt.toIso8601String(),
+    'completedAt': null,
     'updatedAt': changedAt.toIso8601String(),
   };
   return plan.copyWith(taskWorkflow: workflow);
 }
 
-Plan setTaskStatus(Plan plan, String key, TaskStatus status) {
+Plan setTaskStatus(Plan plan, String key, TaskStatus status, {DateTime? now}) {
   final workflow = <String, Map<String, dynamic>>{
     for (final entry in plan.taskWorkflow.entries)
       entry.key: Map<String, dynamic>.from(entry.value),
@@ -211,10 +211,17 @@ Plan setTaskStatus(Plan plan, String key, TaskStatus status) {
       current['cycles'] = cycles;
     }
   }
+  final changedAt = now ?? DateTime.now();
+  final wasCompleted = taskStatus(plan, key) == TaskStatus.completed;
   workflow[key] = {
     ...current,
     'status': status.name,
-    'updatedAt': DateTime.now().toIso8601String(),
+    'completedAt': status == TaskStatus.completed
+        ? (wasCompleted
+              ? current['completedAt'] ?? changedAt.toIso8601String()
+              : changedAt.toIso8601String())
+        : null,
+    'updatedAt': changedAt.toIso8601String(),
   };
   return plan.copyWith(taskWorkflow: workflow);
 }
@@ -254,8 +261,9 @@ List<Map<String, dynamic>> taskCycles(Plan plan, String key) {
 Plan replaceTaskWorkflowCycles(
   Plan plan,
   String key,
-  List<Map<String, dynamic>> cycles,
-) {
+  List<Map<String, dynamic>> cycles, {
+  DateTime? now,
+}) {
   final workflow = <String, Map<String, dynamic>>{
     for (final entry in plan.taskWorkflow.entries)
       entry.key: Map<String, dynamic>.from(entry.value),
@@ -276,13 +284,16 @@ Plan replaceTaskWorkflowCycles(
   });
   final active = sanitized.isEmpty ? const <String, dynamic>{} : sanitized.last;
   final previous = workflow[key];
-  final now = DateTime.now().toIso8601String();
+  final changedAt = now ?? DateTime.now();
+  final changedAtValue = changedAt.toIso8601String();
+  final nextStatus = sanitized.isEmpty
+      ? TaskStatus.notAssigned.name
+      : active['status'] ?? TaskStatus.notAssigned.name;
+  final wasCompleted = taskStatus(plan, key) == TaskStatus.completed;
 
   workflow[key] = {
     ...?workflow[key],
-    'status': sanitized.isEmpty
-        ? TaskStatus.notAssigned.name
-        : active['status'] ?? TaskStatus.notAssigned.name,
+    'status': nextStatus,
     'instructions': sanitized.isEmpty ? '' : active['instructions'] ?? '',
     'update': sanitized.isEmpty ? '' : active['update'] ?? '',
     'clientConfirmed': sanitized.isEmpty
@@ -292,9 +303,15 @@ Plan replaceTaskWorkflowCycles(
         ? DraftCycleStage.instructions.name
         : active['draftStage'] ?? DraftCycleStage.instructions.name,
     'startedAt': previous?['startedAt'],
-    'completedAt': previous?['completedAt'],
+    'completedAt': nextStatus == TaskStatus.completed.name
+        ? (wasCompleted
+              ? (previous == null
+                    ? changedAtValue
+                    : previous['completedAt'] ?? changedAtValue)
+              : changedAtValue)
+        : null,
     'cycles': sanitized,
-    'updatedAt': now,
+    'updatedAt': changedAtValue,
   };
 
   return plan.copyWith(taskWorkflow: workflow);
