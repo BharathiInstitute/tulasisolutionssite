@@ -13,7 +13,7 @@ class MyDashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(firebaseAuthServiceProvider).getCurrentUser();
+    final staffIds = ref.watch(currentStaffIdsProvider);
     final plansAsync = ref.watch(allPlansStreamProvider);
 
     return AppShell(
@@ -27,7 +27,7 @@ class MyDashboardScreen extends ConsumerWidget {
           onPressed: () => ref.invalidate(allPlansStreamProvider),
         ),
       ],
-      body: user == null
+      body: staffIds.isEmpty
           ? const Center(child: Text('No task information is available'))
           : plansAsync.when(
               loading: () => const LoadingWidget(),
@@ -35,7 +35,7 @@ class MyDashboardScreen extends ConsumerWidget {
                 message: 'Could not load your dashboard: $error',
               ),
               data: (plans) =>
-                  _MyDashboardContent(plans: plans, assigneeId: user.uid),
+                  _MyDashboardContent(plans: plans, assigneeIds: staffIds),
             ),
     );
   }
@@ -43,16 +43,16 @@ class MyDashboardScreen extends ConsumerWidget {
 
 class _MyDashboardContent extends StatelessWidget {
   final List<Plan> plans;
-  final String assigneeId;
+  final List<String> assigneeIds;
 
-  const _MyDashboardContent({required this.plans, required this.assigneeId});
+  const _MyDashboardContent({required this.plans, required this.assigneeIds});
 
   @override
   Widget build(BuildContext context) {
     final assigned = <({Plan plan, String key})>[];
     for (final plan in plans) {
       for (final entry in plan.taskWorkflow.entries) {
-        if (taskAssigneeId(plan, entry.key) == assigneeId) {
+        if (assigneeIds.contains(taskAssigneeId(plan, entry.key))) {
           assigned.add((plan: plan, key: entry.key));
         }
       }

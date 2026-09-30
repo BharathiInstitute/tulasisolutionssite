@@ -19,21 +19,21 @@ final authStateProvider = StreamProvider<User?>((ref) {
 // Current user admin status provider
 final currentUserIsAdminProvider = FutureProvider<bool>((ref) async {
   final authService = ref.watch(firebaseAuthServiceProvider);
-  final user = authService.getCurrentUser();
+  final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return false;
   return await authService.isUserAdmin(user.uid);
 });
 
 final currentUserProfileProvider = FutureProvider<AppUser?>((ref) async {
   final authService = ref.watch(firebaseAuthServiceProvider);
-  final user = authService.getCurrentUser();
+  final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return null;
   return authService.getUserProfile(user.uid);
 });
 
 final currentUserProfileStreamProvider = StreamProvider<AppUser?>((ref) {
   final authService = ref.watch(firebaseAuthServiceProvider);
-  final user = authService.getCurrentUser();
+  final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return Stream.value(null);
   return authService.getUserProfileStream(user.uid);
 });
@@ -92,6 +92,8 @@ final allConsultationsProvider = StreamProvider<List<Consultation>>((ref) {
 
 // All users (admin user management)
 final allUsersProvider = StreamProvider<List<AppUser>>((ref) {
+  final user = ref.watch(authStateProvider).valueOrNull;
+  if (user == null) return Stream.value(<AppUser>[]);
   final firestoreService = ref.watch(firestoreServiceProvider);
   return firestoreService.getUsersStream();
 });
@@ -103,6 +105,8 @@ final allPlansProvider = FutureProvider<List<Plan>>((ref) {
 });
 
 final allPlansStreamProvider = StreamProvider<List<Plan>>((ref) {
+  final user = ref.watch(authStateProvider).valueOrNull;
+  if (user == null) return Stream.value(<Plan>[]);
   final firestoreService = ref.watch(firestoreServiceProvider);
   return firestoreService.getAllPlansStream();
 });
@@ -126,6 +130,45 @@ final performanceAttendanceProvider = StreamProvider<List<AttendanceRecord>>((
   ref,
 ) {
   return ref.watch(firestoreServiceProvider).getPerformanceAttendanceStream();
+});
+
+final currentStaffIdsProvider = Provider<List<String>>((ref) {
+  final user = ref.watch(authStateProvider).valueOrNull;
+  final profile = ref.watch(currentUserProfileProvider).valueOrNull;
+  if (user == null) return [];
+  return {
+    user.uid,
+    if (user.email != null && user.email!.isNotEmpty) user.email!,
+    if (profile != null) profile.uid,
+  }.toList();
+});
+
+final myPerformanceSubmissionsProvider = StreamProvider<List<VideoSubmission>>((
+  ref,
+) {
+  final staffIds = ref.watch(currentStaffIdsProvider);
+  if (staffIds.isEmpty) return Stream.value([]);
+  return ref
+      .watch(firestoreServiceProvider)
+      .getPerformanceSubmissionsStream(staffIds: staffIds);
+});
+
+final myPerformanceHoursProvider = StreamProvider<List<DailyHours>>((ref) {
+  final staffIds = ref.watch(currentStaffIdsProvider);
+  if (staffIds.isEmpty) return Stream.value([]);
+  return ref
+      .watch(firestoreServiceProvider)
+      .getPerformanceHoursStream(staffIds: staffIds);
+});
+
+final myPerformanceAttendanceProvider = StreamProvider<List<AttendanceRecord>>((
+  ref,
+) {
+  final staffIds = ref.watch(currentStaffIdsProvider);
+  if (staffIds.isEmpty) return Stream.value([]);
+  return ref
+      .watch(firestoreServiceProvider)
+      .getPerformanceAttendanceStream(staffIds: staffIds);
 });
 
 // Reusable pricing plan templates (admin managed)

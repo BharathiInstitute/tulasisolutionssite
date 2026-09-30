@@ -13,23 +13,24 @@ class MyAssignedTasksScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentUser = ref.watch(firebaseAuthServiceProvider).getCurrentUser();
+    final staffIds = ref.watch(currentStaffIdsProvider);
     final plansAsync = ref.watch(allPlansStreamProvider);
 
     return AppShell(
       isAdmin: true,
       currentRoute: '/admin/my-tasks',
       title: 'My Tasks',
-      body: currentUser == null
+      body: staffIds.isEmpty
           ? const Center(child: Text('No tasks assigned yet'))
           : plansAsync.when(
               loading: () => const LoadingWidget(),
               error: (error, stackTrace) => CustomErrorWidget(
                 message: 'Error loading your tasks: $error',
+                onRetry: () => ref.invalidate(allPlansStreamProvider),
               ),
               data: (plans) => _ClientTaskList(
                 plans: plans,
-                assigneeId: currentUser.uid,
+                assigneeIds: staffIds,
                 completedOnly: false,
               ),
             ),
@@ -42,23 +43,24 @@ class MyCompletedTasksScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentUser = ref.watch(firebaseAuthServiceProvider).getCurrentUser();
+    final staffIds = ref.watch(currentStaffIdsProvider);
     final plansAsync = ref.watch(allPlansStreamProvider);
 
     return AppShell(
       isAdmin: true,
       currentRoute: '/admin/my-completed-tasks',
       title: 'My Completed Tasks',
-      body: currentUser == null
+      body: staffIds.isEmpty
           ? const Center(child: Text('No completed tasks yet'))
           : plansAsync.when(
               loading: () => const LoadingWidget(),
               error: (error, stackTrace) => CustomErrorWidget(
                 message: 'Error loading your completed tasks: $error',
+                onRetry: () => ref.invalidate(allPlansStreamProvider),
               ),
               data: (plans) => _ClientTaskList(
                 plans: plans,
-                assigneeId: currentUser.uid,
+                assigneeIds: staffIds,
                 completedOnly: true,
               ),
             ),
@@ -68,12 +70,12 @@ class MyCompletedTasksScreen extends ConsumerWidget {
 
 class _ClientTaskList extends StatefulWidget {
   final List<Plan> plans;
-  final String? assigneeId;
+  final List<String> assigneeIds;
   final bool completedOnly;
 
   const _ClientTaskList({
     required this.plans,
-    this.assigneeId,
+    required this.assigneeIds,
     required this.completedOnly,
   });
 
@@ -108,13 +110,13 @@ class _ClientTaskListState extends State<_ClientTaskList> {
               unitIndex: i,
               unitTotal: total,
             );
-            if (taskAssigneeId(plan, item.key) == widget.assigneeId) {
+            if (widget.assigneeIds.contains(taskAssigneeId(plan, item.key))) {
               rows.add(item);
             }
           }
         } else {
           final item = _ClientTaskItem(plan: plan, rawFeature: raw);
-          if (taskAssigneeId(plan, item.key) == widget.assigneeId) {
+          if (widget.assigneeIds.contains(taskAssigneeId(plan, item.key))) {
             rows.add(item);
           }
         }
@@ -250,7 +252,10 @@ class _ClientTaskListState extends State<_ClientTaskList> {
             ),
             category: visibleRows[index].category,
             clientName: 'My task',
-            lockedAssigneeId: widget.assigneeId,
+            lockedAssigneeId: taskAssigneeId(
+              visibleRows[index].plan,
+              visibleRows[index].key,
+            ),
           ),
           if (index < visibleRows.length - 1) const SizedBox(height: 2),
         ],
@@ -278,7 +283,7 @@ class _ClientTaskListState extends State<_ClientTaskList> {
                       ),
                       category: row.category,
                       clientName: 'My task',
-                      lockedAssigneeId: widget.assigneeId,
+                      lockedAssigneeId: taskAssigneeId(row.plan, row.key),
                     ),
               ],
             ),
@@ -349,9 +354,9 @@ class _ClientTaskListState extends State<_ClientTaskList> {
   bool get _canMoveToNextCompletedPeriod {
     final range = _completedDateRange;
     if (range == null) return false;
-    return DateUtils.dateOnly(range.end).isBefore(
-      DateUtils.dateOnly(DateTime.now()),
-    );
+    return DateUtils.dateOnly(
+      range.end,
+    ).isBefore(DateUtils.dateOnly(DateTime.now()));
   }
 
   void _moveCompletedPeriod(int direction) {

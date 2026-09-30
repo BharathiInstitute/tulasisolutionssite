@@ -15,6 +15,7 @@ export {
 } from "./chat-media";
 export { submitWebsiteLead } from "./website-leads";
 export { assignClientCode } from "./client-codes";
+export { createStaffAccount, deleteStaffAccount } from "./staff-accounts";
 export { qualificationTimeouts } from "./qualification-timeouts";
 export { startQualificationAutomation } from "./qualification-admin";
 export { publishWeeklyReports } from "./weekly-reports";

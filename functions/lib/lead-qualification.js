@@ -207,27 +207,43 @@ async function queueQualificationReply(input, content, delaySeconds = 0) {
 }
 async function processQualificationTimeouts() {
     const now = new Date();
-    const clients = await config_1.db.collection(config_1.Collections.clients).get();
-    for (const client of clients.docs) {
-        const sessions = await config_1.db.collection(`${client.ref.path}/qualificationSessions`).where("status", "==", "in_progress").get();
+    const sessionsQuery = config_1.db.collectionGroup("qualificationSessions")
+        .where("status", "==", "in_progress")
+        .where("nextActionAt", "<=", now)
+        .orderBy("nextActionAt")
+        .limit(100);
+    const existingClients = new Map();
+    let sessions = await sessionsQuery.get();
+    while (!sessions.empty) {
         for (const doc of sessions.docs) {
+            const ownerRef = doc.ref.parent.parent;
+            if (!ownerRef || ownerRef.parent.path !== config_1.Collections.clients)
+                continue;
             const data = doc.data();
             const nextActionAt = data.nextActionAt?.toDate?.();
             if (!nextActionAt || nextActionAt > now)
                 continue;
+            if (!existingClients.has(ownerRef.id)) {
+                existingClients.set(ownerRef.id, (await ownerRef.get()).exists);
+            }
+            if (!existingClients.get(ownerRef.id))
+                continue;
             const contactId = data.contactId;
-            const contact = await config_1.db.doc(`${client.ref.path}/${config_1.Collections.contacts}/${contactId}`).get();
+            const contact = await config_1.db.doc(`${ownerRef.path}/${config_1.Collections.contacts}/${contactId}`).get();
             const phone = contact.data()?.phone;
             if (data.restartSentAt) {
                 await doc.ref.update({ status: "needs_manual_review", state: "needs_manual_review", manualReviewReason: "No response after restart", nextActionAt: null, updatedAt: now });
-                await updateLead({ clientId: client.id, contactId, conversationId: data.conversationId, phone: phone ?? "", contactName: contact.data()?.name ?? "Contact", content: "", isNewContact: false }, { automationStatus: "needs_manual_review", manualReviewReason: "No response after restart" });
+                await updateLead({ clientId: ownerRef.id, contactId, conversationId: data.conversationId, phone: phone ?? "", contactName: contact.data()?.name ?? "Contact", content: "", isNewContact: false }, { automationStatus: "needs_manual_review", manualReviewReason: "No response after restart" });
                 continue;
             }
             if (data.conversationId && phone)
-                await queueQualificationReply({ clientId: client.id, contactId, conversationId: data.conversationId, phone, contactName: contact.data()?.name ?? "Contact", content: "", isNewContact: false }, questions.restart + questions.businessStatus, 0);
+                await queueQualificationReply({ clientId: ownerRef.id, contactId, conversationId: data.conversationId, phone, contactName: contact.data()?.name ?? "Contact", content: "", isNewContact: false }, questions.restart + questions.businessStatus, 0);
             await doc.ref.update({ state: "awaiting_business_status", invalidAttempts: 0, restartSentAt: now, lastQuestionAt: now, nextActionAt: new Date(now.getTime() + 23 * 60 * 60 * 1000), updatedAt: now });
             logger.info(`Qualification session restarted: ${doc.ref.path}`);
         }
+        if (sessions.size < 100)
+            break;
+        sessions = await sessionsQuery.startAfter(sessions.docs[sessions.docs.length - 1]).get();
     }
 }
 //# sourceMappingURL=lead-qualification.js.map

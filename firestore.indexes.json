@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "qualificationSessions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "nextActionAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "conversations",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -57,6 +65,16 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "message_queue",
+      "fieldPath": "status",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
     {
       "collectionGroup": "teamMembers",
       "fieldPath": "userId",

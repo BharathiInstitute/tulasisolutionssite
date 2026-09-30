@@ -27,6 +27,8 @@ service cloud.firestore {
 
     function hasPanel(panel) {
       return isStaff() && (
+        panel in ['myDashboard', 'myPerformance', 'myTasks']
+        ||
         (request.auth.token.email != null
           && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
           && panel in get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.panels)
@@ -113,6 +115,7 @@ service cloud.firestore {
 
     match /plans/{planId} {
       allow read: if isAdmin()
+        || hasPanel('myDashboard')
         || hasPanel('plans')
         || hasPanel('tasks')
         || hasPanel('myTasks');
@@ -138,18 +141,21 @@ service cloud.firestore {
     }
 
     match /performance_submissions/{submissionId} {
-      allow read: if canManagePerformance() || resource.data.staffId == request.auth.uid;
+      allow read: if canManagePerformance() || (hasPanel('myPerformance')
+        && resource.data.staffId in [request.auth.uid, request.auth.token.email]);
       allow create: if canManagePerformance();
       allow update, delete: if canManagePerformance();
     }
 
     match /performance_hours/{recordId} {
-      allow read: if canManagePerformance() || resource.data.staffId == request.auth.uid;
+      allow read: if canManagePerformance() || (hasPanel('myPerformance')
+        && resource.data.staffId in [request.auth.uid, request.auth.token.email]);
       allow write: if canManagePerformance();
     }
 
     match /performance_attendance/{recordId} {
-      allow read: if canManagePerformance() || resource.data.staffId == request.auth.uid;
+      allow read: if canManagePerformance() || (hasPanel('myPerformance')
+        && resource.data.staffId in [request.auth.uid, request.auth.token.email]);
       allow write: if canManagePerformance();
     }
   }

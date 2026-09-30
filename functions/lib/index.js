@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.syncClientConversationFilters = exports.syncConversationFilterStats = exports.initializeConversationFilters = exports.getConversationFilterCounts = exports.backfillConversationFilters = exports.submitWhatsAppTemplate = exports.listTemplates = exports.publishWeeklyReports = exports.startQualificationAutomation = exports.qualificationTimeouts = exports.assignClientCode = exports.submitWebsiteLead = exports.uploadChatMedia = exports.processChatMedia = exports.prepareChatMediaUpload = exports.completeChatMediaUpload = exports.cleanupAbandonedChatMedia = exports.markConversationRead = exports.updateOutreachCampaignStatus = exports.onMessageQueued = exports.enqueueMessage = exports.processMessageQueue = exports.msg91Webhook = void 0;
+exports.syncClientConversationFilters = exports.syncConversationFilterStats = exports.initializeConversationFilters = exports.getConversationFilterCounts = exports.backfillConversationFilters = exports.submitWhatsAppTemplate = exports.listTemplates = exports.publishWeeklyReports = exports.startQualificationAutomation = exports.qualificationTimeouts = exports.deleteStaffAccount = exports.createStaffAccount = exports.assignClientCode = exports.submitWebsiteLead = exports.uploadChatMedia = exports.processChatMedia = exports.prepareChatMediaUpload = exports.completeChatMediaUpload = exports.cleanupAbandonedChatMedia = exports.markConversationRead = exports.updateOutreachCampaignStatus = exports.onMessageQueued = exports.enqueueMessage = exports.processMessageQueue = exports.msg91Webhook = void 0;
 var msg91_webhook_1 = require("./msg91/msg91-webhook");
 Object.defineProperty(exports, "msg91Webhook", { enumerable: true, get: function () { return msg91_webhook_1.msg91Webhook; } });
 var message_queue_1 = require("./message-queue");
@@ -20,6 +20,9 @@ var website_leads_1 = require("./website-leads");
 Object.defineProperty(exports, "submitWebsiteLead", { enumerable: true, get: function () { return website_leads_1.submitWebsiteLead; } });
 var client_codes_1 = require("./client-codes");
 Object.defineProperty(exports, "assignClientCode", { enumerable: true, get: function () { return client_codes_1.assignClientCode; } });
+var staff_accounts_1 = require("./staff-accounts");
+Object.defineProperty(exports, "createStaffAccount", { enumerable: true, get: function () { return staff_accounts_1.createStaffAccount; } });
+Object.defineProperty(exports, "deleteStaffAccount", { enumerable: true, get: function () { return staff_accounts_1.deleteStaffAccount; } });
 var qualification_timeouts_1 = require("./qualification-timeouts");
 Object.defineProperty(exports, "qualificationTimeouts", { enumerable: true, get: function () { return qualification_timeouts_1.qualificationTimeouts; } });
 var qualification_admin_1 = require("./qualification-admin");

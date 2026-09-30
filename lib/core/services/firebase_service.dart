@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/enums.dart';
+import '../chat/cloud_function_service.dart';
 import '../models/client_deduplication.dart';
 import '../models/models.dart';
 import '../models/weekly_report.dart';
@@ -114,33 +115,43 @@ class FirebaseAuthService {
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Stream<List<VideoSubmission>> getPerformanceSubmissionsStream() {
-    return _firestore
-        .collection('performance_submissions')
-        .snapshots()
-        .map(
-          (snapshot) =>
-              snapshot.docs.map(VideoSubmission.fromFirestore).toList(),
-        );
+  Query<Map<String, dynamic>> _performanceQuery(
+    String collection, {
+    List<String>? staffIds,
+  }) {
+    final query = _firestore.collection(collection);
+    return staffIds == null ? query : query.where('staffId', whereIn: staffIds);
   }
 
-  Stream<List<DailyHours>> getPerformanceHoursStream() {
-    return _firestore
-        .collection('performance_hours')
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs.map(DailyHours.fromFirestore).toList(),
-        );
+  Stream<List<VideoSubmission>> getPerformanceSubmissionsStream({
+    List<String>? staffIds,
+  }) {
+    return _performanceQuery(
+      'performance_submissions',
+      staffIds: staffIds,
+    ).snapshots().map(
+      (snapshot) => snapshot.docs.map(VideoSubmission.fromFirestore).toList(),
+    );
   }
 
-  Stream<List<AttendanceRecord>> getPerformanceAttendanceStream() {
-    return _firestore
-        .collection('performance_attendance')
-        .snapshots()
-        .map(
-          (snapshot) =>
-              snapshot.docs.map(AttendanceRecord.fromFirestore).toList(),
-        );
+  Stream<List<DailyHours>> getPerformanceHoursStream({List<String>? staffIds}) {
+    return _performanceQuery(
+      'performance_hours',
+      staffIds: staffIds,
+    ).snapshots().map(
+      (snapshot) => snapshot.docs.map(DailyHours.fromFirestore).toList(),
+    );
+  }
+
+  Stream<List<AttendanceRecord>> getPerformanceAttendanceStream({
+    List<String>? staffIds,
+  }) {
+    return _performanceQuery(
+      'performance_attendance',
+      staffIds: staffIds,
+    ).snapshots().map(
+      (snapshot) => snapshot.docs.map(AttendanceRecord.fromFirestore).toList(),
+    );
   }
 
   Future<void> createPerformanceSubmission(VideoSubmission submission) {
@@ -233,31 +244,19 @@ class FirestoreService {
   Future<void> addStaffMember({
     required String name,
     required String email,
+    required String password,
     required String role,
     String team = '',
     List<String> panels = const [],
   }) async {
-    final normalizedEmail = email.trim();
-    final normalizedName = name.trim();
-    final normalizedRole = role.trim();
-
-    if (normalizedEmail.isEmpty || normalizedName.isEmpty) {
-      throw StateError('Name and email are required');
-    }
-
-    final docId = normalizedEmail.toLowerCase();
-
-    await _firestore.collection('users').doc(docId).set({
-      'uid': docId,
-      'email': normalizedEmail,
-      'name': normalizedName,
-      'isAdmin': false,
-      'isStaff': true,
-      'role': normalizedRole,
+    await CloudFunctionService().call('createStaffAccount', {
+      'name': name.trim(),
+      'email': email.trim().toLowerCase(),
+      'password': password,
+      'role': role.trim(),
       'team': team.trim(),
-      'panels': panels,
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+      'panels': {...defaultStaffPanels, ...panels}.toList(),
+    }, 0);
   }
 
   Future<void> updateStaffMember({
@@ -273,9 +272,16 @@ class FirestoreService {
       'team': team.trim(),
       'isAdmin': false,
       'isStaff': true,
-      'panels': panels,
+      'panels': {...defaultStaffPanels, ...panels}.toList(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<void> deleteStaffMember(String uid, String confirmation) async {
+    await CloudFunctionService().call('deleteStaffAccount', {
+      'uid': uid,
+      'confirmation': confirmation,
+    }, 0);
   }
 
   // Clients

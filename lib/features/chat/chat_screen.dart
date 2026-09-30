@@ -6,6 +6,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -50,6 +51,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scrollController = ScrollController();
   late ConversationChannel _activeChannel;
   bool _isAttaching = false;
+  bool _isReviewingAttachments = false;
+  bool _isSendingAttachments = false;
+  String? _attachmentBatchLabel;
   bool _isDraggingFile = false;
   bool _attachmentCancelled = false;
   double _attachmentProgress = 0.01;
@@ -78,6 +82,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _send() async {
+    if (_isSendingAttachments || _isAttaching) return;
     final text = _controller.text;
     if (text.trim().isEmpty) return;
     _controller.clear();
@@ -110,12 +115,90 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _attachFile() async {
-    if (_isAttaching) return;
+    if (_attachmentsBusy) return;
     if (!_canAttachMedia()) return;
 
-    final file = await FilePicker.pickFile(type: FileType.any);
-    if (file == null || !mounted) return;
-    await _uploadAttachment(file.xFile);
+    final files = await FilePicker.pickFiles(type: FileType.any);
+    if (files.isEmpty || !mounted || _attachmentsBusy) return;
+    await _reviewAttachments(files.map((file) => file.xFile).toList());
+  }
+
+  bool get _attachmentsBusy =>
+      _isAttaching || _isReviewingAttachments || _isSendingAttachments;
+
+  Future<void> _reviewAttachments(List<XFile> files) async {
+    setState(() => _isReviewingAttachments = true);
+    List<XFile>? selected;
+    try {
+      selected = await showDialog<List<XFile>>(
+        context: context,
+        builder: (_) => ChatAttachmentReviewDialog(
+          files: files,
+          onPreview: _previewAttachment,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isReviewingAttachments = false);
+    }
+    if (!mounted || selected == null || selected.isEmpty) return;
+    final batch = selected;
+    setState(() => _isSendingAttachments = true);
+    try {
+      for (var index = 0; index < batch.length; index++) {
+        if (index > 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
+        if (!mounted) return;
+        setState(() {
+          _attachmentBatchLabel =
+              '${index + 1}/${batch.length}: ${batch[index].name}';
+        });
+        final sent = await _uploadAttachment(batch[index]);
+        if (!sent) {
+          if (mounted && index + 1 < batch.length) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '${batch.length - index - 1} remaining files were not sent.',
+                ),
+              ),
+            );
+          }
+          break;
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSendingAttachments = false;
+          _attachmentBatchLabel = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _previewAttachment(XFile file) async {
+    final type = _messageTypeForMime(
+      file.mimeType ?? lookupMimeType(file.name),
+    );
+    if (kIsWeb && type != MessageType.document) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _MediaDialog(url: file.path, type: type),
+      );
+      return;
+    }
+    try {
+      final uri = kIsWeb ? Uri.parse(file.path) : Uri.file(file.path);
+      if (await launchUrl(uri)) return;
+    } catch (_) {
+      if (!mounted) return;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open this file for preview.')),
+      );
+    }
   }
 
   bool _canAttachMedia() {
@@ -134,24 +217,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   void _handleFileDrop(DropDoneDetails details) {
     if (_isDraggingFile) setState(() => _isDraggingFile = false);
-    if (_isAttaching || !_canAttachMedia()) return;
+    if (_attachmentsBusy || !_canAttachMedia()) return;
     final files = details.files.whereType<DropItemFile>().toList();
-    if (files.length != 1) {
+    if (files.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            files.isEmpty
-                ? 'Drop a file to attach it.'
-                : 'Drop one file at a time.',
-          ),
-        ),
+        const SnackBar(content: Text('Drop files to attach them.')),
       );
       return;
     }
-    unawaited(_uploadAttachment(files.single));
+    unawaited(_reviewAttachments(files));
   }
 
-  Future<void> _uploadAttachment(XFile file) async {
+  Future<bool> _uploadAttachment(XFile file) async {
     try {
       final fileSize = await file.length();
       if (fileSize <= 0) {
@@ -179,7 +256,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         mimeType: mimeType,
         fileSize: fileSize,
       );
-      if (!mounted || _attachmentCancelled) return;
+      if (!mounted || _attachmentCancelled) return false;
       _setAttachmentProgress(0.08);
       final safeName = attachment.fileName.replaceAll(
         RegExp(r'[^A-Za-z0-9._-]'),
@@ -203,7 +280,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         throw StateError('Upload could not be prepared.');
       }
 
-      if (!mounted || _attachmentCancelled) return;
+      if (!mounted || _attachmentCancelled) return false;
       setState(() {
         _attachmentPhase = 'Uploading';
         _attachmentProgress = 0.12;
@@ -215,7 +292,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         uploadUrl: uploadUrl,
         endProgress: requiresProcessing ? 0.55 : 0.82,
       );
-      if (!mounted || _attachmentCancelled) return;
+      if (!mounted || _attachmentCancelled) return false;
       setState(() {
         _attachmentPhase = 'Finalizing';
         _attachmentProgress = requiresProcessing ? 0.58 : 0.88;
@@ -231,7 +308,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           });
       var uploadData = Map<String, dynamic>.from(completeResult.data as Map);
       if (requiresProcessing) {
-        if (!mounted || _attachmentCancelled) return;
+        if (!mounted || _attachmentCancelled) return false;
         setState(() {
           _attachmentPhase = 'Processing media';
           _attachmentProgress = 0.62;
@@ -268,16 +345,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             type: messageType,
             caption: messageType == MessageType.document ? file.name : null,
           );
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _attachmentProgress = 1);
       _scrollToBottom();
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
       if (_attachmentCancelled) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Attachment upload cancelled.')),
         );
-        return;
+        return false;
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -285,6 +363,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           backgroundColor: Colors.red,
         ),
       );
+      return false;
     } finally {
       _processingProgressTimer?.cancel();
       _processingProgressTimer = null;
@@ -483,6 +562,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (_isAttaching) ...[
+                  if (_attachmentBatchLabel != null)
+                    Text(
+                      _attachmentBatchLabel!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   Tooltip(
                     message: 'Cancel attachment upload',
                     child: GestureDetector(
@@ -517,10 +602,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.attach_file),
-                      tooltip: _isAttaching
-                          ? 'Uploading attachment'
-                          : 'Attach file',
-                      onPressed: _isAttaching ? null : _attachFile,
+                      tooltip: _attachmentsBusy
+                          ? 'Attachments in progress'
+                          : 'Attach files',
+                      onPressed: _attachmentsBusy ? null : _attachFile,
                     ),
                     Expanded(
                       child: TextField(
@@ -546,7 +631,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     ),
                     const SizedBox(width: 4),
                     IconButton.filled(
-                      onPressed: _send,
+                      onPressed: _isSendingAttachments || _isAttaching
+                          ? null
+                          : _send,
                       icon: const Icon(Icons.send),
                       style: IconButton.styleFrom(
                         backgroundColor: _channelColor,
@@ -694,181 +781,190 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
-    return DropTarget(
-      enable: _activeChannel == ConversationChannel.whatsapp && !_isAttaching,
-      onDragEntered: (_) {
-        if (!_isDraggingFile) setState(() => _isDraggingFile = true);
-      },
-      onDragExited: (_) {
-        if (_isDraggingFile) setState(() => _isDraggingFile = false);
-      },
-      onDragDone: _handleFileDrop,
-      child: Stack(
-        children: [
-          AppShell(
-            isAdmin: true,
-            currentRoute: '/admin/chat',
-            title: widget.conversation.contactName,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.phone),
-                tooltip: 'Call ${widget.conversation.contactPhone}',
-                onPressed: _openDialer,
-              ),
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  if (value == 'profile') _showContact();
-                  if (value == 'template') _showTemplatePicker();
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'profile',
-                    child: Text('View Contact'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'template',
-                    child: Text('Send Template'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'close',
-                    child: Text('Close Chat'),
-                  ),
-                ],
-              ),
-            ],
-            body: Column(
-              children: [
-                // Channel switcher
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerLow,
-                    border: Border(
-                      bottom: BorderSide(
-                        color: theme.dividerColor.withAlpha(60),
+    return AppShell(
+      isAdmin: true,
+      currentRoute: '/admin/chat',
+      title: widget.conversation.contactName,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.phone),
+          tooltip: 'Call ${widget.conversation.contactPhone}',
+          onPressed: _openDialer,
+        ),
+        PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'profile') _showContact();
+            if (value == 'template') _showTemplatePicker();
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem(value: 'profile', child: Text('View Contact')),
+            const PopupMenuItem(
+              value: 'template',
+              child: Text('Send Template'),
+            ),
+            const PopupMenuItem(value: 'close', child: Text('Close Chat')),
+          ],
+        ),
+      ],
+      body: DropTarget(
+        enable:
+            _activeChannel == ConversationChannel.whatsapp && !_attachmentsBusy,
+        onDragEntered: (_) {
+          if (!_isDraggingFile) setState(() => _isDraggingFile = true);
+        },
+        onDragExited: (_) {
+          if (_isDraggingFile) setState(() => _isDraggingFile = false);
+        },
+        onDragDone: _handleFileDrop,
+        child: ClipRect(
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  // Channel switcher
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerLow,
+                      border: Border(
+                        bottom: BorderSide(
+                          color: theme.dividerColor.withAlpha(60),
+                        ),
                       ),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      _ChannelChip(
-                        icon: Icons.chat,
-                        label: 'WhatsApp',
-                        color: const Color(0xFF25D366),
-                        selected:
-                            _activeChannel == ConversationChannel.whatsapp,
-                        onTap: () => setState(
-                          () => _activeChannel = ConversationChannel.whatsapp,
+                    child: Row(
+                      children: [
+                        _ChannelChip(
+                          icon: Icons.chat,
+                          label: 'WhatsApp',
+                          color: const Color(0xFF25D366),
+                          selected:
+                              _activeChannel == ConversationChannel.whatsapp,
+                          onTap: () => setState(
+                            () => _activeChannel = ConversationChannel.whatsapp,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      _ChannelChip(
-                        icon: Icons.sms,
-                        label: 'SMS',
-                        color: Colors.blue,
-                        selected: false,
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('SMS - Coming Soon!')),
+                        const SizedBox(width: 8),
+                        _ChannelChip(
+                          icon: Icons.sms,
+                          label: 'SMS',
+                          color: Colors.blue,
+                          selected: false,
+                          onTap: () =>
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('SMS - Coming Soon!'),
+                                ),
+                              ),
                         ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _channelColor.withAlpha(20),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(_channelIcon, size: 12, color: _channelColor),
-                            const SizedBox(width: 4),
-                            Text(
-                              'via $_channelLabel',
-                              style: TextStyle(
-                                fontSize: 11,
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _channelColor.withAlpha(20),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _channelIcon,
+                                size: 12,
                                 color: _channelColor,
-                                fontWeight: FontWeight.w600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'via $_channelLabel',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _channelColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Messages
+                  Expanded(
+                    child: messages.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No messages yet. Start the conversation!',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
-                          ],
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(12),
+                            itemCount: messages.length,
+                            itemBuilder: (context, i) {
+                              final msg = messages[i];
+                              final messageTime = msg.eventAt ?? msg.createdAt;
+                              final previousMessageTime = i == 0
+                                  ? null
+                                  : messages[i - 1].eventAt ??
+                                        messages[i - 1].createdAt;
+                              final isOutbound =
+                                  msg.direction == MessageDirection.outbound;
+                              final showDate =
+                                  i == 0 ||
+                                  !_isSameDay(
+                                    previousMessageTime!,
+                                    messageTime,
+                                  );
+
+                              return Column(
+                                children: [
+                                  if (showDate) _DateChip(date: messageTime),
+                                  _MessageBubble(
+                                    message: msg,
+                                    isOutbound: isOutbound,
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                  ),
+                  _buildComposer(theme),
+                ],
+              ),
+              if (_isDraggingFile)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer.withAlpha(
+                          220,
+                        ),
+                        border: Border.all(
+                          color: theme.colorScheme.primary,
+                          width: 3,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                // Messages
-                Expanded(
-                  child: messages.isEmpty
-                      ? Center(
-                          child: Text(
-                            'No messages yet. Start the conversation!',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.all(12),
-                          itemCount: messages.length,
-                          itemBuilder: (context, i) {
-                            final msg = messages[i];
-                            final messageTime = msg.eventAt ?? msg.createdAt;
-                            final previousMessageTime = i == 0
-                                ? null
-                                : messages[i - 1].eventAt ??
-                                      messages[i - 1].createdAt;
-                            final isOutbound =
-                                msg.direction == MessageDirection.outbound;
-                            final showDate =
-                                i == 0 ||
-                                !_isSameDay(previousMessageTime!, messageTime);
-
-                            return Column(
-                              children: [
-                                if (showDate) _DateChip(date: messageTime),
-                                _MessageBubble(
-                                  message: msg,
-                                  isOutbound: isOutbound,
-                                ),
-                              ],
-                            );
-                          },
+                      child: Center(
+                        child: Icon(
+                          Icons.file_upload_outlined,
+                          size: 72,
+                          color: theme.colorScheme.primary,
                         ),
+                      ),
+                    ),
+                  ),
                 ),
-                _buildComposer(theme),
-              ],
-            ),
+            ],
           ),
-          if (_isDraggingFile)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer.withAlpha(220),
-                    border: Border.all(
-                      color: theme.colorScheme.primary,
-                      width: 3,
-                    ),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      Icons.file_upload_outlined,
-                      size: 72,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
     /*      appBar: AppBar(
@@ -1601,6 +1697,152 @@ class _MessageBubble extends StatelessWidget {
     final m = dt.minute.toString().padLeft(2, '0');
     final period = dt.hour >= 12 ? 'PM' : 'AM';
     return '$h:$m $period';
+  }
+}
+
+class ChatAttachmentReviewDialog extends StatefulWidget {
+  final List<XFile> files;
+  final Future<void> Function(XFile) onPreview;
+
+  const ChatAttachmentReviewDialog({
+    super.key,
+    required this.files,
+    required this.onPreview,
+  });
+
+  @override
+  State<ChatAttachmentReviewDialog> createState() =>
+      _ChatAttachmentReviewDialogState();
+}
+
+class _ChatAttachmentReviewDialogState
+    extends State<ChatAttachmentReviewDialog> {
+  late final List<XFile> _files = List.of(widget.files);
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Attachments (${_files.length})'),
+      content: SizedBox(
+        width: 560,
+        height: (MediaQuery.sizeOf(context).height * 0.45).clamp(120.0, 400.0),
+        child: ListView.builder(
+          itemCount: _files.length,
+          itemBuilder: (_, index) {
+            final file = _files[index];
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              horizontalTitleGap: 12,
+              leading: _AttachmentThumbnail(key: ObjectKey(file), file: file),
+              title: Text(
+                file.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () => widget.onPreview(file),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Preview ${file.name}',
+                    icon: const Icon(Icons.visibility_outlined),
+                    onPressed: () => widget.onPreview(file),
+                  ),
+                  IconButton(
+                    tooltip: 'Remove ${file.name}',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => setState(() => _files.removeAt(index)),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _files.isEmpty
+              ? null
+              : () => Navigator.of(context).pop(List<XFile>.of(_files)),
+          icon: const Icon(Icons.send),
+          label: Text('Send ${_files.length}'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AttachmentThumbnail extends StatefulWidget {
+  final XFile file;
+
+  const _AttachmentThumbnail({super.key, required this.file});
+
+  @override
+  State<_AttachmentThumbnail> createState() => _AttachmentThumbnailState();
+}
+
+class _AttachmentThumbnailState extends State<_AttachmentThumbnail> {
+  late final String? _mimeType =
+      widget.file.mimeType ?? lookupMimeType(widget.file.name);
+  late final bool _isImage = _mimeType?.startsWith('image/') == true;
+  late final Future<Uint8List>? _bytes = _isImage && !kIsWeb
+      ? widget.file.readAsBytes()
+      : null;
+
+  Widget get _fallback => Icon(
+    _isImage
+        ? Icons.broken_image_outlined
+        : _mimeType?.startsWith('video/') == true
+        ? Icons.videocam_outlined
+        : _mimeType?.startsWith('audio/') == true
+        ? Icons.audio_file_outlined
+        : Icons.insert_drive_file_outlined,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 56,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: !_isImage
+              ? _fallback
+              : kIsWeb
+              ? Image.network(
+                  widget.file.path,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => _fallback,
+                )
+              : FutureBuilder<Uint8List>(
+                  future: _bytes,
+                  builder: (_, snapshot) {
+                    if (snapshot.hasError) return _fallback;
+                    if (!snapshot.hasData) {
+                      return const Center(
+                        child: SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      );
+                    }
+                    return Image.memory(
+                      snapshot.data!,
+                      fit: BoxFit.contain,
+                      cacheWidth: 168,
+                      cacheHeight: 168,
+                      errorBuilder: (_, __, ___) => _fallback,
+                    );
+                  },
+                ),
+        ),
+      ),
+    );
   }
 }
 

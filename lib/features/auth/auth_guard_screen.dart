@@ -110,7 +110,10 @@ class StaffAccessRequiredScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 20),
               FilledButton.icon(
-                onPressed: () => context.go('/admin/my-dashboard'),
+                onPressed: () {
+                  ref.invalidate(currentUserProfileProvider);
+                  context.go('/auth-guard');
+                },
                 icon: const Icon(Icons.refresh),
                 label: const Text('Check access'),
               ),

@@ -146,30 +146,31 @@ export const processMessageQueue = onSchedule(
     secrets: [msg91AuthKey, msg91WhatsAppNumber],
   },
   async () => {
-    const clientsSnap = await db.collection(Collections.clients).get();
-    logger.info(`processMessageQueue: found ${clientsSnap.size} clients`);
+    const pendingQuery = db.collectionGroup(Collections.messageQueue)
+      .where("status", "==", "pending")
+      .limit(100);
+    const existingClients = new Map<string, boolean>();
+    const clientMessageCounts = new Map<string, number>();
+    let pendingSnap = await pendingQuery.get();
 
-    for (const clientDoc of clientsSnap.docs) {
-      const clientId = clientDoc.id;
-      const queueRef = db.collection(
-        clientCol(clientId, Collections.messageQueue)
-      );
-
-      // Find pending messages (not yet sent)
-      const pendingSnap = await queueRef
-        .where("status", "==", "pending")
-        .limit(100)
-        .get();
-
-      logger.info(`Client ${clientId}: ${pendingSnap.size} pending messages`);
-
+    while (!pendingSnap.empty) {
       for (const doc of pendingSnap.docs) {
+        const ownerRef = doc.ref.parent.parent;
+        if (!ownerRef || ownerRef.parent.path !== Collections.clients) continue;
+        const clientId = ownerRef.id;
+        const messageCount = clientMessageCounts.get(clientId) ?? 0;
+        if (messageCount >= 100) continue;
+        clientMessageCounts.set(clientId, messageCount + 1);
         const data = doc.data();
         const channel = data.channel ?? "whatsapp";
         const retries = data.retries ?? 0;
         const scheduledAt = data.scheduledAt?.toDate?.() as Date | undefined;
 
         if (scheduledAt && scheduledAt > new Date()) continue;
+        if (!existingClients.has(clientId)) {
+          existingClients.set(clientId, (await ownerRef.get()).exists);
+        }
+        if (!existingClients.get(clientId)) continue;
         if (!await campaignAllowsSending(data.campaignId)) continue;
         if (!await leadAllowsMessaging(clientId, doc.ref)) continue;
 
@@ -372,7 +373,10 @@ export const processMessageQueue = onSchedule(
           }, { merge: true });
         }
       }
-
+      if (pendingSnap.size < 100) break;
+      pendingSnap = await pendingQuery
+        .startAfter(pendingSnap.docs[pendingSnap.docs.length - 1])
+        .get();
     }
   }
 );

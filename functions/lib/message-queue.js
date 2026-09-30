@@ -135,23 +135,32 @@ exports.processMessageQueue = (0, scheduler_1.onSchedule)({
     region: "asia-south1",
     secrets: [config_1.msg91AuthKey, config_1.msg91WhatsAppNumber],
 }, async () => {
-    const clientsSnap = await config_1.db.collection(config_1.Collections.clients).get();
-    logger.info(`processMessageQueue: found ${clientsSnap.size} clients`);
-    for (const clientDoc of clientsSnap.docs) {
-        const clientId = clientDoc.id;
-        const queueRef = config_1.db.collection((0, config_1.clientCol)(clientId, config_1.Collections.messageQueue));
-        // Find pending messages (not yet sent)
-        const pendingSnap = await queueRef
-            .where("status", "==", "pending")
-            .limit(100)
-            .get();
-        logger.info(`Client ${clientId}: ${pendingSnap.size} pending messages`);
+    const pendingQuery = config_1.db.collectionGroup(config_1.Collections.messageQueue)
+        .where("status", "==", "pending")
+        .limit(100);
+    const existingClients = new Map();
+    const clientMessageCounts = new Map();
+    let pendingSnap = await pendingQuery.get();
+    while (!pendingSnap.empty) {
         for (const doc of pendingSnap.docs) {
+            const ownerRef = doc.ref.parent.parent;
+            if (!ownerRef || ownerRef.parent.path !== config_1.Collections.clients)
+                continue;
+            const clientId = ownerRef.id;
+            const messageCount = clientMessageCounts.get(clientId) ?? 0;
+            if (messageCount >= 100)
+                continue;
+            clientMessageCounts.set(clientId, messageCount + 1);
             const data = doc.data();
             const channel = data.channel ?? "whatsapp";
             const retries = data.retries ?? 0;
             const scheduledAt = data.scheduledAt?.toDate?.();
             if (scheduledAt && scheduledAt > new Date())
+                continue;
+            if (!existingClients.has(clientId)) {
+                existingClients.set(clientId, (await ownerRef.get()).exists);
+            }
+            if (!existingClients.get(clientId))
                 continue;
             if (!await campaignAllowsSending(data.campaignId))
                 continue;
@@ -352,6 +361,11 @@ exports.processMessageQueue = (0, scheduler_1.onSchedule)({
                 }, { merge: true });
             }
         }
+        if (pendingSnap.size < 100)
+            break;
+        pendingSnap = await pendingQuery
+            .startAfter(pendingSnap.docs[pendingSnap.docs.length - 1])
+            .get();
     }
 });
 /**

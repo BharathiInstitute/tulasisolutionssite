@@ -18,7 +18,11 @@ const adminPanelLabels = <String, String>{
   'myPerformance': 'My performance',
 };
 
-const defaultStaffPanels = <String>{};
+const defaultStaffPanels = <String>{
+  'myDashboard',
+  'myPerformance',
+  'myTasks',
+};
 
 List<String> _normalizePlanFeatures(List<String> features) {
   final normalized = <String>[];

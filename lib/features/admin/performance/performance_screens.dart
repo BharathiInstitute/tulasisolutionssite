@@ -89,18 +89,44 @@ class _StaffPerformanceScreenState
 
   @override
   Widget build(BuildContext context) {
-    final staffId = ref
-        .watch(firebaseAuthServiceProvider)
-        .getCurrentUser()
-        ?.uid;
+    final profile = ref.watch(currentUserProfileProvider).valueOrNull;
+    final staffIds = ref.watch(currentStaffIdsProvider);
+    final staffId = profile?.uid;
+    final canManagePerformance =
+        profile?.isAdmin == true ||
+        profile?.canAccessPanel('performance') == true;
     final submissions =
-        ref.watch(performanceSubmissionsProvider).valueOrNull ?? [];
-    final hours = ref.watch(performanceHoursProvider).valueOrNull ?? [];
+        ref
+            .watch(
+              canManagePerformance
+                  ? performanceSubmissionsProvider
+                  : myPerformanceSubmissionsProvider,
+            )
+            .valueOrNull ??
+        [];
+    final hours =
+        ref
+            .watch(
+              canManagePerformance
+                  ? performanceHoursProvider
+                  : myPerformanceHoursProvider,
+            )
+            .valueOrNull ??
+        [];
     final attendance =
-        ref.watch(performanceAttendanceProvider).valueOrNull ?? [];
-    final contentStaff = (ref.watch(allUsersProvider).valueOrNull ?? [])
-        .where((user) => user.team.trim().toLowerCase() == 'content')
-        .toList();
+        ref
+            .watch(
+              canManagePerformance
+                  ? performanceAttendanceProvider
+                  : myPerformanceAttendanceProvider,
+            )
+            .valueOrNull ??
+        [];
+    final contentStaff = canManagePerformance
+        ? (ref.watch(allUsersProvider).valueOrNull ?? [])
+              .where((user) => user.team.trim().toLowerCase() == 'content')
+              .toList()
+        : [if (profile != null) profile];
     final today = DateUtils.dateOnly(DateTime.now());
     final range = _dateRangeFor(today);
     bool isInPeriod(DateTime value) {
@@ -142,7 +168,8 @@ class _StaffPerformanceScreenState
 
     final weeklySubmissions = submissions
         .where(
-          (item) => item.staffId == staffId && _isThisWeek(item.submittedAt),
+          (item) =>
+              staffIds.contains(item.staffId) && _isThisWeek(item.submittedAt),
         )
         .toList();
     final todayUnits = weeklySubmissions
@@ -767,8 +794,19 @@ Future<void> _showMemberPointsDialog(
         height: 460,
         child: Consumer(
           builder: (context, dialogRef, child) {
+            final profile = dialogRef
+                .watch(currentUserProfileProvider)
+                .valueOrNull;
+            final canManage =
+                profile?.isAdmin == true ||
+                profile?.canAccessPanel('performance') == true;
+            final viewedStaffIds = canManage
+                ? [staffId]
+                : dialogRef.watch(currentStaffIdsProvider);
             final liveSubmissions = dialogRef.watch(
-              performanceSubmissionsProvider,
+              canManage
+                  ? performanceSubmissionsProvider
+                  : myPerformanceSubmissionsProvider,
             );
             return liveSubmissions.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -787,12 +825,23 @@ Future<void> _showMemberPointsDialog(
                 staff: staff,
                 staffId: staffId,
                 submissions: items
-                    .where((submission) => submission.staffId == staffId)
+                    .where(
+                      (submission) =>
+                          viewedStaffIds.contains(submission.staffId),
+                    )
                     .toList(),
                 hours:
-                    (dialogRef.watch(performanceHoursProvider).valueOrNull ??
+                    (dialogRef
+                                .watch(
+                                  canManage
+                                      ? performanceHoursProvider
+                                      : myPerformanceHoursProvider,
+                                )
+                                .valueOrNull ??
                             [])
-                        .where((record) => record.staffId == staffId)
+                        .where(
+                          (record) => viewedStaffIds.contains(record.staffId),
+                        )
                         .toList(),
                 names: names,
                 canEdit: canEdit,
