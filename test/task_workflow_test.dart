@@ -4,7 +4,508 @@ import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/tasks/task_workflow.dart';
 
 void main() {
+  test('task due filters use local calendar days and individual workflow keys', () {
+    final now = DateTime(2026, 10, 10, 14);
+    final plan = Plan(
+      id: 'due-filters',
+      clientId: 'client',
+      type: PlanType.setup,
+      name: 'Tasks',
+      price: 0,
+      startDate: now,
+      features: const ['Content: Artwork'],
+      taskWorkflow: {
+        'overdue': {'dueAt': DateTime(2026, 10, 9).toIso8601String()},
+        'today': {'dueAt': DateTime(2026, 10, 10, 23, 59).toIso8601String()},
+        'tomorrow': {'dueAt': DateTime(2026, 10, 11).toUtc().toIso8601String()},
+        'Content: Artwork::unit:1': {
+          'dueAt': DateTime(2026, 10, 10, 18).toIso8601String(),
+        },
+      },
+    );
+    for (final entry in {
+      'overdue': TaskDueFilter.todayAndOverdue,
+      'today': TaskDueFilter.todayAndOverdue,
+      'tomorrow': TaskDueFilter.upcoming,
+      'unscheduled': TaskDueFilter.unscheduled,
+      'Content: Artwork::unit:1': TaskDueFilter.todayAndOverdue,
+    }.entries) {
+      for (final filter in TaskDueFilter.values) {
+        expect(
+          matchesTaskDueFilter(plan, entry.key, filter, now),
+          filter == entry.value,
+          reason: '${entry.key}: $filter',
+        );
+      }
+    }
+  });
+
+  test(
+    'Sales task queues count each real task independently of customer reminders',
+    () {
+      final now = DateTime(2026, 10, 10, 14);
+      final plan = Plan(
+        id: 'sales',
+        clientId: 'same-customer',
+        type: PlanType.setup,
+        name: 'Sales Tasks',
+        price: 0,
+        startDate: now,
+        features: const [
+          'Sales / Call: Overdue',
+          'Sales / Meeting: Today',
+          'Sales / Call: Future',
+          'Sales / Call: Unscheduled',
+          'Sales / Call: Completed',
+          'Sales / Call: Archived',
+          'Content: Delivery',
+          'Sales / Call: Overdue',
+        ],
+        completedFeatures: const ['Sales / Call: Completed'],
+        taskWorkflow: {
+          'Sales / Call: Overdue': {'dueAt': '2026-10-09T12:00:00'},
+          'Sales / Meeting: Today': {'dueAt': '2026-10-10T18:00:00'},
+          'Sales / Call: Future': {'dueAt': '2026-10-11T00:00:00'},
+          'Sales / Call: Archived': {'isArchived': true},
+        },
+      );
+      final tasks = salesTasks([plan])..sort(compareSalesTaskDue);
+      expect(tasks, hasLength(6));
+      expect(tasks.first.feature, 'Sales / Call: Overdue');
+      for (final entry in {
+        SalesTaskQueue.todayAndOverdue: 2,
+        SalesTaskQueue.upcoming: 1,
+        SalesTaskQueue.unscheduled: 1,
+        SalesTaskQueue.active: 4,
+        SalesTaskQueue.completed: 1,
+      }.entries) {
+        expect(
+          tasks.where((task) => matchesSalesTaskQueue(task, entry.key, now)),
+          hasLength(entry.value),
+        );
+      }
+      expect(salesTasks(const []), isEmpty);
+    },
+  );
+
+  test(
+    'sales record contact edits preserve concurrent additions and reject conflicting edits',
+    () {
+      final original = <String, dynamic>{
+        'id': 'old',
+        'method': 'Call',
+        'outcome': 'Interested',
+        'notes': 'Original',
+      };
+      final concurrent = <String, dynamic>{
+        'id': 'concurrent',
+        'notes': 'New contact',
+      };
+      final edited = {...original, 'notes': 'Corrected'};
+      final merged = mergeSalesRecordContacts(
+        [original, concurrent],
+        [original],
+        [edited],
+      );
+      expect(merged.first['notes'], 'Corrected');
+      expect(merged.last, concurrent);
+      expect(mergeSalesRecordContacts([original, concurrent], [original], []), [
+        concurrent,
+      ]);
+      expect(
+        () => mergeSalesRecordContacts(
+          [
+            {...original, 'notes': 'Someone else edited'},
+          ],
+          [original],
+          [edited],
+        ),
+        throwsStateError,
+      );
+    },
+  );
+
+  test(
+    'sales queue excludes completed and archived tasks and sorts next actions',
+    () {
+      final plan = Plan(
+        id: 'sales',
+        clientId: 'lead',
+        type: PlanType.setup,
+        name: 'Sales Tasks',
+        price: 0,
+        startDate: DateTime(2026, 10, 2),
+        features: const [
+          'Sales / Call: Later',
+          'Sales / Proposal: First',
+          'Sales / Call: Done',
+          'Sales / Call: Archived',
+          'Content: Delivery',
+        ],
+        completedFeatures: const ['Sales / Call: Done'],
+        taskWorkflow: {
+          'Sales / Call: Later': {
+            'dueAt': '2026-10-04T15:00:00',
+            'assignedTo': 'staff',
+          },
+          'Sales / Proposal: First': {
+            'dueAt': '2026-10-02T15:00:00',
+            'assignedTo': 'staff',
+          },
+          'Sales / Call: Archived': {'isArchived': true},
+        },
+      );
+      final tasks = openSalesTasksByClient([plan])['lead']!;
+      expect(tasks.map((task) => task.feature), [
+        'Sales / Proposal: First',
+        'Sales / Call: Later',
+      ]);
+      final client = Client(
+        id: 'lead',
+        name: 'Lead',
+        category: '',
+        contactEmail: '',
+        contactPhone: '',
+        stage: ClientStage.click,
+        createdDate: DateTime(2026, 10, 1),
+      );
+      final now = DateTime(2026, 10, 2, 16);
+      final legacyClient = client.copyWith(
+        notes: 'Customer context',
+        followUpNotes: 'Call tomorrow',
+      );
+      expect(
+        salesRecordNotes(legacyClient, tasks.first),
+        'Customer context\n\nCall tomorrow',
+      );
+      final recorded = tasks.first.plan.copyWith(
+        taskWorkflow: {
+          tasks.first.feature: {
+            'internalNotes': 'Edited merged notes',
+            'salesRecordMerged': true,
+          },
+        },
+      );
+      expect(
+        salesRecordNotes(legacyClient, (
+          plan: recorded,
+          feature: tasks.first.feature,
+        )),
+        'Edited merged notes',
+      );
+      expect(matchesSalesQueue(client, tasks, SalesQueue.today, now), isTrue);
+      expect(
+        matchesSalesQueue(
+          client.copyWith(followUpAt: now.add(const Duration(days: 1))),
+          [],
+          SalesQueue.today,
+          now,
+        ),
+        isFalse,
+      );
+      expect(
+        matchesSalesQueue(
+          client.copyWith(followUpAt: now.subtract(const Duration(days: 2))),
+          [],
+          SalesQueue.overdue,
+          now,
+        ),
+        isTrue,
+      );
+      expect(matchesSalesQueue(client, tasks, SalesQueue.today, now), isTrue);
+      expect(
+        matchesSalesQueue(client, tasks, SalesQueue.overdue, now),
+        isFalse,
+      );
+      expect(
+        matchesSalesQueue(client, tasks, SalesQueue.upcoming, now),
+        isFalse,
+      );
+      expect(
+        matchesSalesQueue(client, tasks, SalesQueue.noNextAction, now),
+        isFalse,
+      );
+      expect(
+        matchesSalesQueue(client, [], SalesQueue.noNextAction, now),
+        isTrue,
+      );
+      expect(
+        matchesSalesQueue(
+          client.copyWith(stage: ClientStage.lost),
+          [],
+          SalesQueue.noNextAction,
+          now,
+        ),
+        isTrue,
+      );
+      expect(
+        matchesSalesQueue(
+          client.copyWith(followUpAt: now),
+          [],
+          SalesQueue.today,
+          now,
+        ),
+        isTrue,
+      );
+      final undatedTasks = <SalesTask>[
+        (plan: plan.copyWith(taskWorkflow: {}), feature: tasks.first.feature),
+      ];
+      expect(
+        matchesSalesQueue(client, undatedTasks, SalesQueue.noNextAction, now),
+        isTrue,
+      );
+      for (final date in [
+        null,
+        DateTime(2026, 10, 1, 23, 59),
+        DateTime(2026, 10, 2),
+        DateTime(2026, 10, 2, 23, 59),
+        DateTime(2026, 10, 3),
+      ]) {
+        final record = client.copyWith(followUpAt: date);
+        expect(
+          SalesQueue.values.where(
+            (queue) => matchesSalesQueue(record, [], queue, now),
+          ),
+          hasLength(1),
+        );
+      }
+    },
+  );
+
   group('task workflow draft cycles', () {
+    Plan restorePlan() => Plan(
+      id: 'restore-plan',
+      clientId: 'client',
+      type: PlanType.setup,
+      name: 'Plan',
+      price: 100,
+      features: const ['Content: Artwork'],
+      startDate: DateTime(2026, 10, 1),
+      taskWorkflow: const {
+        'Content: Artwork': {
+          'assignedTo': 'staff',
+          'status': 'assigned',
+          'priority': 'high',
+          'internalNotes': 'Keep notes',
+        },
+      },
+    );
+    const restoreKey = 'Content: Artwork';
+
+    test(
+      'restores saved stage after serialization and repeated completion saves',
+      () {
+        for (final status in [
+          TaskStatus.assigned,
+          TaskStatus.started,
+          TaskStatus.notAssigned,
+        ]) {
+          var plan = restorePlan();
+          if (status == TaskStatus.notAssigned) {
+            plan = updateTaskAssignment(plan, restoreKey, priority: 'high');
+          }
+          plan = setTaskStatus(plan, restoreKey, status);
+          var completed = setTaskStatus(plan, restoreKey, TaskStatus.completed);
+          completed = Plan.fromData(completed.id, completed.toFirestore());
+          completed = setTaskStatus(
+            completed,
+            restoreKey,
+            TaskStatus.completed,
+          );
+          final restored = restoreCompletedTask(completed, restoreKey);
+          expect(taskStatus(restored, restoreKey), status);
+          expect(taskCompletedAt(restored, restoreKey), isNull);
+          expect(restored.taskWorkflow[restoreKey]?['completedBy'], isNull);
+          expect(taskPriority(restored, restoreKey), 'high');
+          expect(taskInternalNotes(restored, restoreKey), 'Keep notes');
+          expect(restored.price, 100);
+          final recompleted = setTaskStatus(
+            restored,
+            restoreKey,
+            TaskStatus.completed,
+          );
+          expect(
+            taskStatus(
+              restoreCompletedTask(recompleted, restoreKey),
+              restoreKey,
+            ),
+            status,
+          );
+        }
+      },
+    );
+
+    test(
+      'restores client review and preserves draft edits and earlier drafts',
+      () {
+        var plan = createNextDraftCycle(restorePlan(), restoreKey);
+        plan = createNextDraftCycle(plan, restoreKey);
+        plan = submitTaskForReview(plan, restoreKey, reviewer: 'client');
+        final earlier = taskCycles(plan, restoreKey).first;
+        var completed = completeReviewedTask(plan, restoreKey);
+        completed = updateTaskCycleWorkLink(
+          completed,
+          restoreKey,
+          2,
+          'https://example.com/revised',
+        );
+        final restored = restoreCompletedTask(completed, restoreKey);
+        expect(taskStatus(restored, restoreKey), TaskStatus.draftCycle);
+        expect(
+          draftCycleStage(restored, restoreKey),
+          DraftCycleStage.confirmation,
+        );
+        expect(
+          currentTaskCycle(restored, restoreKey)['reviewRequestedFrom'],
+          'client',
+        );
+        expect(
+          currentTaskCycle(restored, restoreKey)['clientConfirmed'],
+          isFalse,
+        );
+        expect(currentTaskCycle(restored, restoreKey)['completedAt'], isNull);
+        expect(
+          currentTaskCycle(restored, restoreKey)['draftLink'],
+          'https://example.com/revised',
+        );
+        expect(
+          currentTaskCycle(restored, restoreKey)['sentToClientAt'],
+          currentTaskCycle(plan, restoreKey)['sentToClientAt'],
+        );
+        expect(taskCycles(restored, restoreKey).first, earlier);
+        expect(taskCycles(restored, restoreKey), hasLength(2));
+      },
+    );
+
+    test('restores working draft stage for non-review completion', () {
+      final plan = replaceTaskWorkflowCycles(restorePlan(), restoreKey, [
+        {
+          'cycle': 1,
+          'status': TaskStatus.draftCycle.name,
+          'draftStage': DraftCycleStage.working.name,
+          'instructions': 'Keep instructions',
+        },
+      ]);
+      final completed = setTaskStatus(plan, restoreKey, TaskStatus.completed);
+      final restored = restoreCompletedTask(completed, restoreKey);
+      expect(draftCycleStage(restored, restoreKey), DraftCycleStage.working);
+      expect(
+        taskText(restored, restoreKey, 'instructions'),
+        'Keep instructions',
+      );
+    });
+
+    test(
+      'legacy completion restores to client review or recorded work stage',
+      () {
+        for (final started in [false, true]) {
+          final original = restorePlan();
+          final legacy = original.copyWith(
+            taskWorkflow: {
+              restoreKey: {
+                ...original.taskWorkflow[restoreKey]!,
+                'status': 'completed',
+                if (started) 'firstStartedAt': '2026-10-01T10:00:00Z',
+              },
+            },
+          );
+          final restored = restoreCompletedTask(legacy, restoreKey);
+          expect(
+            taskStatus(restored, restoreKey),
+            started ? TaskStatus.started : TaskStatus.assigned,
+          );
+        }
+        final completed = completeReviewedTask(
+          submitTaskForReview(restorePlan(), restoreKey, reviewer: 'client'),
+          restoreKey,
+        );
+        final legacy = completed.copyWith(
+          taskWorkflow: {
+            restoreKey: {
+              ...completed.taskWorkflow[restoreKey]!,
+              'completionPreviousStage': null,
+            },
+          },
+        );
+        final restored = restoreCompletedTask(legacy, restoreKey);
+        expect(taskStatus(restored, restoreKey), TaskStatus.draftCycle);
+        expect(
+          currentTaskCycle(restored, restoreKey)['reviewRequestedFrom'],
+          'client',
+        );
+        expect(
+          currentTaskCycle(restored, restoreKey)['clientConfirmed'],
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'restoring a split unit keeps other units and progress and pauses timer',
+      () {
+        final startedAt = DateTime.utc(2026, 10, 1, 10);
+        final original = restorePlan();
+        final plan = original.copyWith(
+          completedFeatures: const [restoreKey],
+          featureProgress: const {restoreKey: 100},
+          taskWorkflow: {
+            '$restoreKey#1': {
+              ...original.taskWorkflow[restoreKey]!,
+              'status': 'started',
+              'timerRunning': true,
+              'startedAt': startedAt.toIso8601String(),
+              'elapsedMilliseconds': 1000,
+            },
+            '$restoreKey#2': {'status': 'completed', 'assignedTo': 'other'},
+          },
+        );
+        final completed = setTaskStatus(
+          plan,
+          '$restoreKey#1',
+          TaskStatus.completed,
+          now: startedAt.add(const Duration(minutes: 1)),
+        );
+        final restored = restoreCompletedTask(
+          completed,
+          '$restoreKey#1',
+          now: startedAt.add(const Duration(days: 1)),
+        );
+        expect(taskStatus(restored, '$restoreKey#1'), TaskStatus.started);
+        expect(
+          restored.taskWorkflow['$restoreKey#2'],
+          plan.taskWorkflow['$restoreKey#2'],
+        );
+        expect(restored.completedFeatures, plan.completedFeatures);
+        expect(restored.featureProgress, plan.featureProgress);
+        expect(taskTimerIsRunning(restored, '$restoreKey#1'), isFalse);
+        expect(
+          taskElapsedTime(restored, '$restoreKey#1'),
+          const Duration(seconds: 61),
+        );
+      },
+    );
+
+    test('restore rejects active tasks and invalid saved stages', () {
+      expect(
+        () => restoreCompletedTask(restorePlan(), restoreKey),
+        throwsStateError,
+      );
+      final completed = setTaskStatus(
+        restorePlan(),
+        restoreKey,
+        TaskStatus.completed,
+      );
+      final invalid = completed.copyWith(
+        taskWorkflow: {
+          restoreKey: {
+            ...completed.taskWorkflow[restoreKey]!,
+            'completionPreviousStage': {'status': 'invalid'},
+          },
+        },
+      );
+      expect(() => restoreCompletedTask(invalid, restoreKey), throwsStateError);
+    });
+
     test('renaming a task preserves metadata and workflow keys', () {
       const oldFeature = 'Content: 2 reels';
       final plan = Plan(
@@ -440,7 +941,7 @@ void main() {
       );
 
       expect(taskStatus(completed, key), TaskStatus.completed);
-      expect(taskCompletedAt(completed, key), completedAt);
+      expect(taskCompletedAt(completed, key), completedAt.toUtc());
       expect(taskCycles(completed, key), hasLength(1));
       expect(completed.taskWorkflow[key]?['cycles'], isNull);
 
@@ -479,7 +980,7 @@ void main() {
       ], now: completedAt);
 
       expect(taskStatus(completed, key), TaskStatus.completed);
-      expect(taskCompletedAt(completed, key), completedAt);
+      expect(taskCompletedAt(completed, key), completedAt.toUtc());
     });
 
     test('updating a work link preserves the draft workflow', () {

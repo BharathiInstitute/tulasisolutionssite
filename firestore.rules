@@ -47,6 +47,48 @@ service cloud.firestore {
       return isAdmin() || hasPanel('tasks') || hasPanel('myTasks');
     }
 
+    function canCreatePersonalTask() {
+      let plan = request.resource.data;
+      let feature = plan.features[0];
+      let task = plan.tasks[0];
+      let workflow = plan.taskWorkflow[feature];
+      return hasPanel('myTasks')
+        && plan.keys().hasOnly(['clientId', 'templateId', 'type', 'name', 'price',
+          'features', 'tasks', 'completedFeatures', 'featureProgress', 'taskWorkflow',
+          'startDate', 'endDate'])
+        && plan.type == 'setup'
+        && plan.price == 0
+        && plan.templateId == null
+        && plan.endDate == null
+        && plan.startDate is timestamp
+        && plan.clientId is string
+        && (plan.clientId == '__internal_practice__'
+          || exists(/databases/$(database)/documents/clients/$(plan.clientId)))
+        && plan.name in ['Custom Tasks', 'Practice (Internal)']
+        && ((plan.clientId == '__internal_practice__') == (plan.name == 'Practice (Internal)'))
+        && plan.features is list && plan.features.size() == 1
+        && feature is string
+        && plan.tasks is list && plan.tasks.size() == 1
+        && task.keys().hasOnly(['id', 'category', 'title', 'instructions', 'order',
+          'source', 'templateTaskId', 'addedReason'])
+        && task.id is string && task.id.size() > 0
+        && task.templateTaskId == null
+        && task.category is string && !task.category.matches('^Sales($| / .*)')
+        && task.title is string && task.title.size() > 0
+        && feature == task.category + ': ' + task.title
+        && task.source == 'customIncluded'
+        && task.order == 0
+        && task.addedReason is string && task.addedReason.size() > 0
+        && plan.completedFeatures is list && plan.completedFeatures.size() == 0
+        && plan.featureProgress is map && plan.featureProgress.size() == 0
+        && plan.taskWorkflow is map && plan.taskWorkflow.keys().hasOnly([feature])
+        && workflow.keys().hasOnly(['assignedTo', 'assignedToName', 'priority',
+          'updatedAt', 'dueAt', 'internalNotes', 'createdAt', 'createdBy',
+          'assignedAt', 'assignedBy', 'dueBy'])
+        && workflow.assignedTo is string
+        && workflow.assignedTo in [request.auth.uid, request.auth.token.email];
+    }
+
     match /{path=**}/conversations/{conversationId} {
       allow read: if isAdmin() || hasPanel('chat');
     }
@@ -90,6 +132,16 @@ service cloud.firestore {
         || hasPanel('myTasks');
       allow write: if isAdmin() || hasPanel('leads') || hasPanel('clients');
 
+      match /salesActivity/{entryId} {
+        allow read: if isAdmin()
+          || hasPanel('leads') || hasPanel('clients')
+          || hasPanel('plans') || hasPanel('tasks') || hasPanel('myTasks');
+        allow create: if (isAdmin() || hasPanel('leads') || hasPanel('clients'))
+          && request.resource.data.recordedBy == request.auth.uid
+          && request.resource.data.id == entryId;
+        allow update, delete: if false;
+      }
+
       match /conversations/{conversationId} {
         allow read, write: if isAdmin() || hasPanel('chat');
 
@@ -103,14 +155,11 @@ service cloud.firestore {
         allow write: if isAdmin() || hasPanel('chat');
       }
 
-      match /{document=**} {
+      match /{collection}/{document}/{rest=**} {
         allow read: if isAdmin() || hasPanel('clients');
-        allow write: if isAdmin() || hasPanel('clients');
+        allow write: if collection != 'salesActivity'
+          && (isAdmin() || hasPanel('clients'));
       }
-    }
-
-    match /consultations/{consultationId} {
-      allow read, write: if isAdmin() || hasPanel('leads') || hasPanel('clients');
     }
 
     match /plans/{planId} {
@@ -119,17 +168,16 @@ service cloud.firestore {
         || hasPanel('plans')
         || hasPanel('tasks')
         || hasPanel('myTasks');
-      allow create, delete: if isAdmin() || hasPanel('plans') || hasPanel('tasks');
+      allow create: if isAdmin() || hasPanel('plans') || hasPanel('tasks')
+        || canCreatePersonalTask();
+      allow delete: if isAdmin() || hasPanel('plans') || hasPanel('tasks');
       allow update: if isAdmin()
-        || hasPanel('plans')
-        || hasPanel('tasks')
-        || (hasPanel('myTasks')
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['taskWorkflow']));
-    }
-
-    match /weekly_reports/{reportId} {
-      allow read: if isAdmin() || hasPanel('tasks');
-      allow create, update, delete: if isAdmin() || hasPanel('tasks');
+        || ((hasPanel('plans')
+            || hasPanel('tasks')
+            || (hasPanel('myTasks')
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['taskWorkflow'])))
+          && request.resource.data.features.size() >= resource.data.features.size()
+          && request.resource.data.get('tasks', []).size() >= resource.data.get('tasks', []).size());
     }
 
     match /plan_templates/{templateId} {

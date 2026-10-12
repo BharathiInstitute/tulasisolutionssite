@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'core/constants/enums.dart';
 import 'core/chat/chat.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/auth/auth_guard_screen.dart';
@@ -9,7 +8,6 @@ import 'features/auth/forgot_password_screen.dart';
 import 'features/admin/dashboard/admin_dashboard_screen.dart';
 import 'features/admin/dashboard/my_dashboard_screen.dart';
 import 'features/admin/client_list/client_list_screen.dart';
-import 'features/admin/client_list/stage_group_client_list_screen.dart';
 import 'features/admin/client_profile/client_profile_screen.dart';
 import 'features/admin/setup_checklist/add_checklist_item_screen.dart';
 import 'features/admin/goals/goals_management_screen.dart';
@@ -18,7 +16,7 @@ import 'features/admin/payments/payments_screen.dart';
 import 'features/admin/tasks/tasks_screen.dart';
 import 'features/admin/performance/performance_screens.dart';
 import 'features/admin/tasks/my_assigned_tasks_screen.dart';
-import 'features/reports/weekly_reports_screen.dart';
+import 'features/admin/tasks/sales_tasks_tab.dart';
 import 'features/chat/conversations_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/chat/template_management_screen.dart';
@@ -108,6 +106,12 @@ final router = GoRouter(
       builder: (context, state) => const ClientListScreen(),
     ),
     GoRoute(
+      path: '/admin/sales-tasks',
+      builder: (context, state) => SalesTasksScreen(
+        customerId: state.uri.queryParameters['customer'],
+      ),
+    ),
+    GoRoute(
       path: '/admin/leads/:clientId',
       builder: (context, state) {
         final clientId = state.pathParameters['clientId']!;
@@ -143,19 +147,7 @@ final router = GoRouter(
     ),
     GoRoute(
       path: '/admin/consultations',
-      builder: (context, state) => const StageGroupClientListScreen(
-        title: 'Clients',
-        icon: Icons.people,
-        currentRoute: '/admin/consultations',
-        planTypes: {PlanType.setup, PlanType.subscription},
-        stages: {
-          ClientStage.register,
-          ClientStage.consult,
-          ClientStage.followUp,
-          ClientStage.client,
-          ClientStage.retain,
-        },
-      ),
+      redirect: (context, state) => '/admin/leads',
     ),
     GoRoute(
       path: '/admin/payments',
@@ -178,16 +170,12 @@ final router = GoRouter(
       builder: (context, state) => const MyCompletedTasksScreen(),
     ),
     GoRoute(
-      path: '/admin/reports',
-      builder: (context, state) => const WeeklyReportsScreen(),
-    ),
-    GoRoute(
       path: '/admin/setup',
-      redirect: (context, state) => '/admin/consultations',
+      redirect: (context, state) => '/admin/leads',
     ),
     GoRoute(
       path: '/admin/subscription',
-      redirect: (context, state) => '/admin/consultations',
+      redirect: (context, state) => '/admin/leads',
     ),
     // Chat Routes
     GoRoute(

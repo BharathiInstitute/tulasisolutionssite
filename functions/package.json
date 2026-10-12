@@ -4,6 +4,7 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "tsc",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-personal-tasks --config ../firebase.json \"node --test test/firestore-personal-tasks.test.cjs\"",
     "deploy": "npm run build && firebase deploy --only functions"
   },
   "engines": {
@@ -19,8 +20,10 @@
     "node-fetch": "^2.7.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/ffprobe-static": "^2.0.3",
     "@types/node": "^20.11.0",
+    "firebase": "^12.19.0",
     "typescript": "^5.4.0"
   }
 }

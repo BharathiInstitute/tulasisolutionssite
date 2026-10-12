@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/access/panel_access.dart';
+import 'package:tulasisolutionssite/core/widgets/shared_widgets.dart';
+import '../../core/widgets/task_save_feedback.dart';
 
 /// Splash/Auth Guard Screen
 /// Checks user authentication status and admin role, then routes accordingly
@@ -27,12 +29,12 @@ class AuthGuardScreen extends ConsumerWidget {
 
         final profileAsync = ref.watch(currentUserProfileProvider);
         return profileAsync.when(
-          loading: () => const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          ),
+          loading: () =>
+              const Scaffold(body: Center(child: CircularProgressIndicator())),
           error: (error, stackTrace) => Scaffold(
-            body: Center(
-              child: Text('Error checking staff access: $error'),
+            body: CustomErrorWidget(
+              message: 'Error checking staff access: $error',
+              onRetry: () => ref.invalidate(currentUserProfileProvider),
             ),
           ),
           data: (profile) {
@@ -119,9 +121,13 @@ class StaffAccessRequiredScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: () => ref
-                    .read(firebaseAuthServiceProvider)
-                    .signOut(),
+                onPressed: () async {
+                  if (!await confirmLeavingUnsavedTasks(context, ref) ||
+                      !context.mounted) {
+                    return;
+                  }
+                  await ref.read(firebaseAuthServiceProvider).signOut();
+                },
                 icon: const Icon(Icons.logout),
                 label: const Text('Sign out'),
               ),

@@ -9,6 +9,7 @@ const String softwareFeatureCategory = 'Software';
 const String contentFeatureCategory = 'Content';
 const String marketingFeatureCategory = 'Marketing';
 const String distributionFeatureCategory = 'Distribution';
+const String salesFeatureCategory = 'Sales';
 const String taskCategorySeparator = ' / ';
 
 const List<String> allPlanFeatureCategories = [
@@ -25,6 +26,16 @@ const Map<String, List<String>> planFeatureSubcategories = {
   contentFeatureCategory: ['Brand Kit', 'Video Kit', 'Content'],
   marketingFeatureCategory: ['Set up', 'Manage'],
   distributionFeatureCategory: ['Set up', 'Manage'],
+  salesFeatureCategory: [
+    'Call',
+    'WhatsApp',
+    'Meeting',
+    'Proposal',
+    'Payment Follow-up',
+    'Renewal',
+    'Referral',
+    'Other',
+  ],
 };
 
 const List<String> allPlanFeatureCategoryLabels = [
@@ -43,7 +54,10 @@ const List<String> allPlanFeatureCategoryLabels = [
 const List<String> setupPlanFeatureCategories = allPlanFeatureCategoryLabels;
 const List<String> subscriptionPlanFeatureCategories =
     allPlanFeatureCategoryLabels;
-const List<String> customTaskFeatureCategories = allPlanFeatureCategories;
+const List<String> customTaskFeatureCategories = [
+  ...allPlanFeatureCategories,
+  salesFeatureCategory,
+];
 
 String displayFeatureCategory(String category) {
   switch (category.trim().toLowerCase()) {

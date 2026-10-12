@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/constants/enums.dart';
+import '../../../core/tasks/task_save_controller.dart';
 import 'package:tulasisolutionssite/core/widgets/app_drawer.dart';
 import 'package:tulasisolutionssite/core/widgets/feature_progress_widgets.dart';
 import 'package:tulasisolutionssite/core/widgets/shared_widgets.dart';
@@ -41,7 +42,7 @@ class _ClientProfileScreenState extends ConsumerState<ClientProfileScreen> {
   Widget build(BuildContext context) {
     final clientAsync = ref.watch(clientProvider(widget.clientId));
     final goalsAsync = ref.watch(goalsProvider(widget.clientId));
-    final plansAsync = ref.watch(plansProvider(widget.clientId));
+    final plansAsync = ref.watch(visibleClientPlansProvider(widget.clientId));
     final templatesAsync = ref.watch(planTemplatesProvider);
 
     return AppShell(
@@ -451,7 +452,10 @@ class _ClientDetailsSideSheetState extends State<ClientDetailsSideSheet> {
       clearFollowUp: _followUpAt == null,
     );
 
-    await widget.ref.read(firestoreServiceProvider).updateClient(updatedClient);
+    await widget.ref.read(firestoreServiceProvider).updateClient(
+      updatedClient,
+      actor: widget.ref.read(currentUserProfileProvider).valueOrNull,
+    );
 
     if (!mounted) return;
     navigator.pop();
@@ -630,7 +634,7 @@ class _ClientDetailsSideSheetState extends State<ClientDetailsSideSheet> {
                             labelText: 'Lifecycle stage',
                             prefixIcon: Icon(Icons.timeline_outlined),
                           ),
-                          items: ClientStage.values
+                          items: chatFunnelStages
                               .where(
                                 (item) =>
                                     item != ClientStage.reach &&
@@ -804,9 +808,7 @@ class _ClientPlanProgressCard extends ConsumerWidget {
     } else {
       updated.remove(rawFeature);
     }
-    await ref
-        .read(firestoreServiceProvider)
-        .updatePlan(plan.copyWith(completedFeatures: updated));
+    _submit(ref, plan.copyWith(completedFeatures: updated));
   }
 
   Future<void> _updateFeatureProgress(
@@ -824,19 +826,37 @@ class _ClientPlanProgressCard extends ConsumerWidget {
     } else {
       updatedCompleted.remove(rawFeature);
     }
-    await ref
-        .read(firestoreServiceProvider)
-        .updatePlan(
-          plan.copyWith(
-            featureProgress: updatedProgress,
-            completedFeatures: updatedCompleted,
-          ),
-        );
+    _submit(
+      ref,
+      plan.copyWith(
+        featureProgress: updatedProgress,
+        completedFeatures: updatedCompleted,
+      ),
+    );
+  }
+
+  void _submit(WidgetRef ref, Plan desired) {
+    final service = ref.read(firestoreServiceProvider);
+    try {
+      ref
+          .read(taskSavesProvider.notifier)
+          .submit(
+            desired: desired,
+            previous: plan,
+            label: plan.name,
+            persist: () => service.updatePlan(desired, previous: plan),
+          );
+    } on StateError catch (error) {
+      ScaffoldMessenger.of(ref.context).showSnackBar(
+        SnackBar(content: Text('Could not save progress: $error')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final percent = (plan.progress * 100).round();
+    final save = ref.watch(taskSavesProvider)[plan.id];
     return Card(
       color: plan.isCompleted
           ? Colors.green.withValues(alpha: 0.08)
@@ -903,16 +923,19 @@ class _ClientPlanProgressCard extends ConsumerWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
-            TrackableFeatureList(
-              features: plan.features,
-              completedFeatures: plan.completedFeatures,
-              featureProgress: plan.featureProgress,
-              categoryOrder: plan.type == PlanType.subscription
-                  ? subscriptionPlanFeatureCategories
-                  : setupPlanFeatureCategories,
-              onToggle: (raw, done) => _toggleFeature(ref, raw, done),
-              onProgressChange: (raw, percent) =>
-                  _updateFeatureProgress(ref, raw, percent),
+            AbsorbPointer(
+              absorbing: save != null && save.phase != TaskSavePhase.confirmed,
+              child: TrackableFeatureList(
+                features: plan.features,
+                completedFeatures: plan.completedFeatures,
+                featureProgress: plan.featureProgress,
+                categoryOrder: plan.type == PlanType.subscription
+                    ? subscriptionPlanFeatureCategories
+                    : setupPlanFeatureCategories,
+                onToggle: (raw, done) => _toggleFeature(ref, raw, done),
+                onProgressChange: (raw, percent) =>
+                    _updateFeatureProgress(ref, raw, percent),
+              ),
             ),
           ],
         ),

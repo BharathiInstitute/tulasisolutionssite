@@ -14,7 +14,7 @@ class AdminDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final clientsAsync = ref.watch(clientsListProvider);
-    final plansAsync = ref.watch(allPlansStreamProvider);
+    final plansAsync = ref.watch(visiblePlansProvider);
     final paymentsAsync = ref.watch(paymentsProvider);
     final currentUser = ref.watch(firebaseAuthServiceProvider).getCurrentUser();
     final clients = clientsAsync.valueOrNull ?? const <Client>[];
@@ -73,7 +73,7 @@ class _DashboardContent extends StatelessWidget {
       (total, payment) => total + payment.amount,
     );
     final stageCounts = {
-      for (final stage in ClientStage.values)
+      for (final stage in chatFunnelStages)
         stage: clients.where((client) => client.stage == stage).length,
     };
     final assignedTasks = <({Plan plan, String key})>[];
@@ -133,7 +133,7 @@ class _DashboardContent extends StatelessWidget {
                   value: '$activeClients',
                   icon: Icons.handshake_outlined,
                   color: Colors.teal,
-                  onTap: () => context.go('/admin/consultations'),
+                  onTap: () => context.go('/admin/leads'),
                 ),
                 _MetricTile(
                   width: tileWidth,
@@ -194,7 +194,7 @@ class _DashboardContent extends StatelessWidget {
             child: Wrap(
               spacing: 24,
               runSpacing: 18,
-              children: ClientStage.values
+              children: chatFunnelStages
                   .where((stage) => stageCounts[stage]! > 0)
                   .map(
                     (stage) => _StageCount(

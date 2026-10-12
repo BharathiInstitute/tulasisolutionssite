@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tulasisolutionssite/core/access/panel_access.dart';
 import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
+import 'package:tulasisolutionssite/core/tasks/task_workflow.dart';
 import 'package:tulasisolutionssite/core/theme/app_theme.dart';
 import 'package:tulasisolutionssite/core/widgets/brand_logo.dart';
+import 'task_save_feedback.dart';
 
 /// Breakpoint above which the side menu is shown as a permanent panel
 /// instead of a hamburger-triggered drawer.
@@ -49,7 +51,8 @@ class AppShell extends ConsumerWidget {
 
       final profile = profileAsync.valueOrNull;
       final requiredPanel = panelForAdminRoute(currentRoute);
-      final isAllowed = profile?.isAdmin == true ||
+      final isAllowed =
+          profile?.isAdmin == true ||
           (requiredPanel != null &&
               canAccessAdminPanel(profile, requiredPanel));
       if (!isAllowed) return const _PanelAccessRequired();
@@ -81,7 +84,13 @@ class AppShell extends ConsumerWidget {
                     bottom: bottom,
                   ),
                   floatingActionButton: floatingActionButton,
-                  body: body,
+                  body: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const TaskSaveFeedback(),
+                      Expanded(child: body),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -99,7 +108,13 @@ class AppShell extends ConsumerWidget {
       ),
       drawer: AppDrawer(isAdmin: isAdmin, currentRoute: currentRoute),
       floatingActionButton: floatingActionButton,
-      body: body,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const TaskSaveFeedback(),
+          Expanded(child: body),
+        ],
+      ),
     );
   }
 }
@@ -272,15 +287,16 @@ class AppDrawer extends ConsumerWidget {
                     _item(
                       context,
                       icon: Icons.people,
-                      label: 'Leads',
+                      label: 'Sales Pipeline',
                       route: '/admin/leads',
                     ),
-                  if (canAccessAdminPanel(profile, 'clients'))
+                  if (canAccessAdminPanel(profile, 'leads') &&
+                      canReadSalesTasks(profile))
                     _item(
                       context,
-                      icon: Icons.event,
-                      label: 'Clients',
-                      route: '/admin/consultations',
+                      icon: Icons.add_task_outlined,
+                      label: 'Sales Tasks',
+                      route: '/admin/sales-tasks',
                     ),
                   if (canAccessAdminPanel(profile, 'payments'))
                     _item(
@@ -303,14 +319,7 @@ class AppDrawer extends ConsumerWidget {
                       label: 'Performance',
                       route: '/admin/performance',
                     ),
-                  if (canAccessAdminPanel(profile, 'tasks'))
-                    _item(
-                      context,
-                      icon: Icons.summarize_outlined,
-                      label: 'Weekly Reports',
-                      route: '/admin/reports',
-                    ),
-                    if (canAccessAdminPanel(profile, 'myDashboard') ||
+                  if (canAccessAdminPanel(profile, 'myDashboard') ||
                       canAccessAdminPanel(profile, 'myTasks') ||
                       canAccessAdminPanel(profile, 'myPerformance'))
                     const Padding(
@@ -361,8 +370,13 @@ class AppDrawer extends ConsumerWidget {
             leading: const Icon(Icons.logout),
             title: const Text('Sign out'),
             onTap: () async {
+              if (!await confirmLeavingUnsavedTasks(context, ref) ||
+                  !context.mounted) {
+                return;
+              }
+              final auth = ref.read(firebaseAuthServiceProvider);
               if (!permanent) Navigator.of(context).pop();
-              await ref.read(firebaseAuthServiceProvider).signOut();
+              await auth.signOut();
             },
           ),
         ],

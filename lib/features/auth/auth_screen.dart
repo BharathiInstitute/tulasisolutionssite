@@ -17,6 +17,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
 
   @override
@@ -180,7 +181,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                       ),
                                       const SizedBox(height: 18),
                                       Text(
-                                        'Admin Login',
+                                        'Login',
                                         textAlign: TextAlign.center,
                                         style: const TextStyle(
                                           fontSize: 30,
@@ -213,9 +214,24 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                       const SizedBox(height: 18),
                                       TextFormField(
                                         controller: _passwordController,
-                                        obscureText: true,
+                                        obscureText: _obscurePassword,
                                         decoration: _fieldDecoration(
                                           'Password',
+                                        ).copyWith(
+                                          suffixIcon: IconButton(
+                                            tooltip: _obscurePassword
+                                                ? 'Show password'
+                                                : 'Hide password',
+                                            icon: Icon(
+                                              _obscurePassword
+                                                  ? Icons.visibility_outlined
+                                                  : Icons.visibility_off_outlined,
+                                            ),
+                                            onPressed: () => setState(() {
+                                              _obscurePassword =
+                                                  !_obscurePassword;
+                                            }),
+                                          ),
                                         ),
                                         validator: (value) =>
                                             value == null || value.length < 6

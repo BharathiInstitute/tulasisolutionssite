@@ -50,12 +50,15 @@ class _TemplateManagementScreenState
     }
   }
 
-  Future<void> _openCreateDialog() async {
+  Future<void> _openCreateDialog({bool serviceGreeting = false}) async {
     final msg91 = ref.read(chatProvider).msg91Service;
     if (msg91 == null) return;
     final submitted = await showDialog<bool>(
       context: context,
-      builder: (_) => _CreateTemplateDialog(msg91: msg91),
+      builder: (_) => _CreateTemplateDialog(
+        msg91: msg91,
+        serviceGreeting: serviceGreeting,
+      ),
     );
     if (submitted == true) await _loadTemplates();
   }
@@ -68,6 +71,11 @@ class _TemplateManagementScreenState
       currentRoute: '/admin/templates',
       title: 'WhatsApp Templates',
       actions: [
+        TextButton.icon(
+          onPressed: () => _openCreateDialog(serviceGreeting: true),
+          icon: const Icon(Icons.waving_hand_outlined),
+          label: const Text('Service Greeting'),
+        ),
         IconButton(
           onPressed: _loading ? null : _loadTemplates,
           tooltip: 'Refresh from MSG91',
@@ -177,7 +185,11 @@ class _TemplateTile extends StatelessWidget {
 
 class _CreateTemplateDialog extends StatefulWidget {
   final MSG91Service msg91;
-  const _CreateTemplateDialog({required this.msg91});
+  final bool serviceGreeting;
+  const _CreateTemplateDialog({
+    required this.msg91,
+    this.serviceGreeting = false,
+  });
 
   @override
   State<_CreateTemplateDialog> createState() => _CreateTemplateDialogState();
@@ -197,6 +209,18 @@ class _CreateTemplateDialogState extends State<_CreateTemplateDialog> {
   String _language = 'en';
   bool _submitting = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.serviceGreeting) {
+      _name.text = 'tulasi_service_greeting';
+      _body.text = 'Hello from Tulasi Solutions. '
+          'We are following up on your service request. '
+          'Please reply to this message so we can continue assisting you.';
+      _category = 'utility';
+    }
+  }
 
   @override
   void dispose() {
@@ -267,7 +291,14 @@ class _CreateTemplateDialogState extends State<_CreateTemplateDialog> {
               controller: _body,
               minLines: 4,
               maxLines: 8,
-              decoration: const InputDecoration(labelText: 'Message body', hintText: 'Hi {{1}}, your appointment is confirmed.'),
+              decoration: InputDecoration(
+                labelText: 'Message body',
+                hintText: 'Hi {{1}}, your appointment is confirmed.',
+                helperText: widget.serviceGreeting
+                    ? 'Only for customers with an existing service request.'
+                    : null,
+                helperMaxLines: 2,
+              ),
               validator: (value) => value == null || value.trim().isEmpty ? 'Message body is required' : null,
             ),
             TextFormField(controller: _footer, decoration: const InputDecoration(labelText: 'Footer (optional)')),

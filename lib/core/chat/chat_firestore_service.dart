@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../constants/enums.dart';
 import 'message_model.dart';
 
 /// Firestore service specifically for chat functionality.
@@ -46,7 +47,10 @@ class ChatFirestoreService {
         .where('channel', isEqualTo: ConversationChannel.whatsapp.name)
         .where('isArchived', isEqualTo: isArchived);
     if (stage != null) {
-      query = query.where('stage', isEqualTo: stage);
+      final stages = ClientStage.storedNamesFor(stage);
+      query = stages.length == 1
+          ? query.where('stage', isEqualTo: stage)
+          : query.where('stage', whereIn: stages);
     }
     return query;
   }
@@ -56,7 +60,10 @@ class ChatFirestoreService {
         ? _firestore.collection(_conversationsPath)
         : _firestore.collectionGroup('conversations');
     if (stage != null) {
-      query = query.where('stage', isEqualTo: stage);
+      final stages = ClientStage.storedNamesFor(stage);
+      query = stages.length == 1
+          ? query.where('stage', isEqualTo: stage)
+          : query.where('stage', whereIn: stages);
     }
     return query.snapshots().map((snapshot) {
       final conversations = snapshot.docs

@@ -17,6 +17,7 @@ class PaymentsScreen extends ConsumerStatefulWidget {
 class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   PaymentStatus? _selectedStatus;
   String _searchQuery = '';
+  bool _recordPaymentOpen = false;
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +35,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
         ),
       ],
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showRecordPaymentDialog(context),
+        onPressed: _recordPaymentOpen
+            ? null
+            : () => _showRecordPaymentDialog(context),
         icon: const Icon(Icons.add),
         label: const Text('Record payment'),
       ),
@@ -137,16 +140,20 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   }
 
   Future<void> _showRecordPaymentDialog(BuildContext context) async {
-    final clients = await ref.read(clientsListProvider.future);
-    if (!context.mounted) return;
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (context) => _RecordPaymentDialog(clients: clients),
-    );
-    if (saved == true && mounted) {
-      ScaffoldMessenger.of(this.context).showSnackBar(
-        const SnackBar(content: Text('Payment recorded as pending.')),
+    if (_recordPaymentOpen) return;
+    setState(() => _recordPaymentOpen = true);
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (context) => const _RecordPaymentDialog(),
       );
+      if (saved == true && mounted) {
+        ScaffoldMessenger.of(this.context).showSnackBar(
+          const SnackBar(content: Text('Payment recorded as pending.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _recordPaymentOpen = false);
     }
   }
 
@@ -535,9 +542,7 @@ class _PaymentCard extends StatelessWidget {
 }
 
 class _RecordPaymentDialog extends ConsumerStatefulWidget {
-  final List<Client> clients;
-
-  const _RecordPaymentDialog({required this.clients});
+  const _RecordPaymentDialog();
 
   @override
   ConsumerState<_RecordPaymentDialog> createState() =>
@@ -550,7 +555,6 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
   final _transactionController = TextEditingController();
   final _notesController = TextEditingController();
   String? _clientId;
-  Plan? _selectedPlan;
   String _paymentMethod = 'UPI';
   DateTime _paymentDate = DateTime.now();
   bool _saving = false;
@@ -565,93 +569,89 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final plansAsync = ref.watch(allPlansStreamProvider);
-    final clientPlans =
-        plansAsync.valueOrNull
-            ?.where((plan) => plan.clientId == _clientId)
-            .toList() ??
-        [];
-
+    final clientsAsync = ref.watch(clientsListProvider);
+    final clientsReady =
+        !clientsAsync.isLoading &&
+        !clientsAsync.hasError &&
+        (clientsAsync.valueOrNull?.isNotEmpty ?? false);
     return AlertDialog(
       title: const Text('Record payment'),
       content: SizedBox(
         width: 520,
-        child: Form(
+        child: clientsAsync.when(
+          skipLoadingOnRefresh: false,
+          loading: () => const SizedBox(
+            height: 100,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text('Loading clients...'),
+              ],
+            ),
+          ),
+          error: (error, stackTrace) => SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Could not load clients: $error'),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(clientsListProvider),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+          data: (clients) => clients.isEmpty
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'No clients available. Add a client before recording a payment.',
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () => ref.invalidate(clientsListProvider),
+                      child: const Text('Refresh clients'),
+                    ),
+                  ],
+                )
+              : Form(
           key: _formKey,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  initialValue: _clientId,
+                  initialValue: clients.any((client) => client.id == _clientId)
+                      ? _clientId
+                      : null,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Client',
                     prefixIcon: Icon(Icons.business_outlined),
                   ),
-                  items: widget.clients
+                  items: clients
                       .map(
                         (client) => DropdownMenuItem(
                           value: client.id,
-                          child: Text(client.name),
+                          child: Text(
+                            client.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       )
                       .toList(),
                   onChanged: (value) {
                     setState(() {
                       _clientId = value;
-                      _selectedPlan = null;
-                      _amountController.clear();
                     });
                   },
                   validator: (value) =>
                       value == null ? 'Select a client' : null,
-                ),
-                const SizedBox(height: 14),
-                DropdownButtonFormField<String>(
-                  key: ValueKey('plan-${_clientId ?? 'none'}'),
-                  initialValue: _selectedPlan?.id,
-                  decoration: InputDecoration(
-                    labelText: 'Plan',
-                    prefixIcon: const Icon(Icons.receipt_long_outlined),
-                    helperText: _clientId == null
-                        ? 'Select a client first'
-                        : plansAsync.isLoading
-                        ? 'Loading assigned plans...'
-                        : clientPlans.isEmpty
-                        ? 'No plans assigned to this client'
-                        : 'Selecting a plan fills its current price',
-                  ),
-                  items: clientPlans
-                      .map(
-                        (plan) => DropdownMenuItem(
-                          value: plan.id,
-                          child: Text(
-                            '${plan.name} - ${_formatAmount(plan.price)}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _clientId == null || clientPlans.isEmpty
-                      ? null
-                      : (value) {
-                          final plan = clientPlans.firstWhere(
-                            (item) => item.id == value,
-                          );
-                          setState(() {
-                            _selectedPlan = plan;
-                            _amountController.text = plan.price.toStringAsFixed(
-                              2,
-                            );
-                          });
-                        },
-                  validator: (_) {
-                    if (_clientId == null) return null;
-                    if (clientPlans.isEmpty) {
-                      return 'Assign a plan to this client first';
-                    }
-                    return _selectedPlan == null ? 'Select a plan' : null;
-                  },
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
@@ -665,7 +665,7 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
                   ),
                   validator: (value) {
                     final amount = double.tryParse(value?.trim() ?? '');
-                    return amount == null || amount <= 0
+                    return amount == null || !amount.isFinite || amount <= 0
                         ? 'Enter a valid amount'
                         : null;
                   },
@@ -684,6 +684,7 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
                   initialValue: _paymentMethod,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Payment method',
                     prefixIcon: Icon(Icons.account_balance_wallet_outlined),
@@ -692,7 +693,11 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
                       .map(
                         (method) => DropdownMenuItem(
                           value: method,
-                          child: Text(method),
+                          child: Text(
+                            method,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       )
                       .toList(),
@@ -725,6 +730,7 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
             ),
           ),
         ),
+        ),
       ),
       actions: [
         TextButton(
@@ -732,7 +738,7 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton.icon(
-          onPressed: _saving ? null : _save,
+          onPressed: _saving || !clientsReady ? null : _save,
           icon: _saving
               ? const SizedBox(
                   width: 18,
@@ -757,8 +763,18 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    final client = widget.clients.firstWhere((item) => item.id == _clientId);
+    if (_saving || _formKey.currentState?.validate() != true) return;
+    final client = ref
+        .read(clientsListProvider)
+        .valueOrNull
+        ?.where((item) => item.id == _clientId)
+        .firstOrNull;
+    if (client == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Client no longer available. Select a client again.')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       await ref
@@ -768,8 +784,6 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
               id: '',
               clientId: client.id,
               clientName: client.name,
-              planId: _selectedPlan!.id,
-              planName: _selectedPlan!.name,
               amount: double.parse(_amountController.text.trim()),
               transactionId: _transactionController.text.trim(),
               paymentMethod: _paymentMethod,
@@ -849,7 +863,9 @@ String _buildUpiLink(PaymentRecord payment) {
       'am': payment.amount.toStringAsFixed(2),
       'cu': 'INR',
       'tr': payment.transactionId,
-      'tn': 'Payment for ${payment.planName ?? 'Selected plan'}',
+      'tn': payment.planName?.trim().isNotEmpty == true
+          ? 'Payment for ${payment.planName}'
+          : 'Payment to Tulasi Solutions',
     },
   ).toString();
 }
@@ -859,7 +875,8 @@ String _buildPaymentMessage(PaymentRecord payment, String recipientName) {
     'Hello $recipientName,',
     '',
     'Payment request from Tulasi Solutions',
-    'Plan: ${payment.planName ?? 'Selected plan'}',
+    if (payment.planName?.trim().isNotEmpty == true)
+      'Plan: ${payment.planName}',
     'Amount: ${_formatAmount(payment.amount)}',
     'UPI ID: 9666464460-3@ybl',
     'Reference: ${payment.transactionId}',

@@ -216,6 +216,7 @@ exports.getConversationFilterCounts = (0, https_1.onCall)(config_1.callableOptio
         "consult",
         "client",
         "retain",
+        "refer",
         "lost",
     ];
     const activeQuery = conversationQuery.where("isArchived", "==", false);

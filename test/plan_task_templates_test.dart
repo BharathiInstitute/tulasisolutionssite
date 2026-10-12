@@ -59,7 +59,18 @@ void main() {
       ]);
       expect(setupPlanFeatureCategories, allPlanFeatureCategoryLabels);
       expect(subscriptionPlanFeatureCategories, allPlanFeatureCategoryLabels);
-      expect(customTaskFeatureCategories, allPlanFeatureCategories);
+      expect(customTaskFeatureCategories, [
+        ...allPlanFeatureCategories,
+        salesFeatureCategory,
+      ]);
+      expect(
+        allPlanFeatureCategoryLabels,
+        isNot(contains(salesFeatureCategory)),
+      );
+      expect(
+        planFeatureSubcategories[salesFeatureCategory],
+        contains('Referral'),
+      );
     });
 
     test('displays legacy task categories under the consolidated names', () {
@@ -70,10 +81,7 @@ void main() {
       expect(displayFeatureCategory('Practice'), 'Content / Brand Kit');
       expect(displayFeatureCategory('Design'), 'Content / Brand Kit');
       expect(displayFeatureCategory('Content'), 'Content / Content');
-      expect(
-        displayFeatureCategory('Distribution'),
-        'Distribution / Set up',
-      );
+      expect(displayFeatureCategory('Distribution'), 'Distribution / Set up');
       expect(displayFeatureCategory('Support'), 'Distribution / Set up');
       expect(parseFeatureCategory('Software / App').category, 'Software');
       expect(parseFeatureCategory('Software / App').subcategory, 'App');

@@ -244,6 +244,7 @@ export const getConversationFilterCounts = onCall(
       "consult",
       "client",
       "retain",
+      "refer",
       "lost",
     ];
     const activeQuery = conversationQuery.where("isArchived", "==", false);

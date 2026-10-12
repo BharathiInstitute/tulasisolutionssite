@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:tulasisolutionssite/features/admin/tasks/tasks_screen.dart';
 import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
@@ -14,14 +15,49 @@ class MyAssignedTasksScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final staffIds = ref.watch(currentStaffIdsProvider);
-    final plansAsync = ref.watch(allPlansStreamProvider);
+    final plansAsync = ref.watch(visiblePlansProvider);
 
     return AppShell(
       isAdmin: true,
       currentRoute: '/admin/my-tasks',
       title: 'My Tasks',
+      floatingActionButton: staffIds.isEmpty
+          ? null
+          : plansAsync.maybeWhen(
+              data: (plans) => FloatingActionButton(
+                tooltip: 'Create my task',
+                onPressed: () async {
+                  try {
+                    final clients = await ref.read(clientsListProvider.future);
+                    if (!context.mounted) return;
+                    await showDialog<void>(
+                      context: context,
+                      builder: (_) => CustomTaskDialog(
+                        plans: plans,
+                        clients: clients,
+                        staff: const [],
+                        selfAssignOnly: true,
+                      ),
+                    );
+                  } catch (error) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Could not open task creation: $error'),
+                      ),
+                    );
+                  }
+                },
+                child: const Icon(Icons.add_task_outlined),
+              ),
+              orElse: () => null,
+            ),
       body: staffIds.isEmpty
-          ? const Center(child: Text('No tasks assigned yet'))
+          ? const _ClientTaskList(
+              plans: [],
+              assigneeIds: [],
+              completedOnly: false,
+            )
           : plansAsync.when(
               loading: () => const LoadingWidget(),
               error: (error, stackTrace) => CustomErrorWidget(
@@ -32,6 +68,12 @@ class MyAssignedTasksScreen extends ConsumerWidget {
                 plans: plans,
                 assigneeIds: staffIds,
                 completedOnly: false,
+                canOpenLeads:
+                    ref
+                        .watch(currentUserProfileProvider)
+                        .valueOrNull
+                        ?.canAccessPanel('leads') ==
+                    true,
               ),
             ),
     );
@@ -44,7 +86,7 @@ class MyCompletedTasksScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final staffIds = ref.watch(currentStaffIdsProvider);
-    final plansAsync = ref.watch(allPlansStreamProvider);
+    final plansAsync = ref.watch(visiblePlansProvider);
 
     return AppShell(
       isAdmin: true,
@@ -62,40 +104,77 @@ class MyCompletedTasksScreen extends ConsumerWidget {
                 plans: plans,
                 assigneeIds: staffIds,
                 completedOnly: true,
+                canOpenLeads:
+                    ref
+                        .watch(currentUserProfileProvider)
+                        .valueOrNull
+                        ?.canAccessPanel('leads') ==
+                    true,
               ),
             ),
     );
   }
 }
 
-class _ClientTaskList extends StatefulWidget {
+class _ClientTaskList extends ConsumerStatefulWidget {
   final List<Plan> plans;
   final List<String> assigneeIds;
   final bool completedOnly;
+  final bool canOpenLeads;
 
   const _ClientTaskList({
     required this.plans,
     required this.assigneeIds,
     required this.completedOnly,
+    this.canOpenLeads = false,
   });
 
   @override
-  State<_ClientTaskList> createState() => _ClientTaskListState();
+  ConsumerState<_ClientTaskList> createState() => _ClientTaskListState();
 }
 
-enum _MyCompletedPeriod { day, week, month, custom }
+enum _MyCompletedPeriod { all, day, week, month, custom }
 
-class _ClientTaskListState extends State<_ClientTaskList> {
+class _ClientTaskListState extends ConsumerState<_ClientTaskList> {
   String? _selectedCategory;
+  TaskDueFilter? _dueFilter;
   _MyCompletedPeriod? _completedPeriod;
   DateTimeRange? _customCompletedRange;
   DateTime _completedPeriodAnchor = DateUtils.dateOnly(DateTime.now());
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.completedOnly) _completedPeriod = _MyCompletedPeriod.all;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    return ref
+        .watch(taskClientsProvider)
+        .when(
+          skipLoadingOnReload: true,
+          loading: () => const LoadingWidget(),
+          error: (error, stackTrace) => CustomErrorWidget(
+            message: 'Error loading task clients: $error',
+            onRetry: () {
+              ref.invalidate(clientsListProvider);
+              ref.invalidate(taskClientsProvider);
+            },
+          ),
+          data: (clients) => _buildTasks(clients),
+        );
+  }
+
+  Widget _buildTasks(List<Client> clients) {
+    final clientNames = {for (final client in clients) client.id: client.name};
+    String clientName(Plan plan) => plan.clientId == '__internal_practice__'
+        ? 'Practice (Internal)'
+        : clientNames[plan.clientId] ?? 'No client linked';
     final rows = <_ClientTaskItem>[];
     for (final plan in widget.plans) {
       for (final raw in plan.features) {
+        if (!widget.completedOnly && isSalesTaskFeature(raw)) continue;
         final text = parseFeature(raw).text;
         final match = RegExp(
           r'^(\d+)\s+(reels?|designs?|videos?)',
@@ -125,7 +204,7 @@ class _ClientTaskListState extends State<_ClientTaskList> {
 
     final activeRows = rows.where((row) => !row.archived).toList();
     final archivedRows = rows.where((row) => row.archived).toList();
-    if (activeRows.isEmpty && archivedRows.isEmpty) {
+    if (widget.completedOnly && activeRows.isEmpty && archivedRows.isEmpty) {
       return const Center(child: Text('No tasks assigned yet'));
     }
     final modeRows = activeRows
@@ -139,12 +218,26 @@ class _ClientTaskListState extends State<_ClientTaskList> {
     final selectedCategory = categoryCounts.containsKey(_selectedCategory)
         ? _selectedCategory
         : null;
-    final visibleRows = modeRows
+    final categoryRows = modeRows
         .where(_matchesCompletedPeriod)
         .where(
           (row) => selectedCategory == null || row.category == selectedCategory,
         )
         .toList();
+    final now = DateTime.now();
+    final visibleRows = categoryRows
+        .where(
+          (row) =>
+              widget.completedOnly ||
+              _dueFilter == null ||
+              matchesTaskDueFilter(row.plan, row.key, _dueFilter!, now),
+        )
+        .toList();
+    String dueLabel(TaskDueFilter filter) => switch (filter) {
+      TaskDueFilter.todayAndOverdue => 'Today & Overdue',
+      TaskDueFilter.upcoming => 'Upcoming',
+      TaskDueFilter.unscheduled => 'Unscheduled',
+    };
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -155,70 +248,40 @@ class _ClientTaskListState extends State<_ClientTaskList> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             if (widget.completedOnly)
-              SizedBox(
-                width: 210,
-                child: DropdownButtonFormField<_MyCompletedPeriod>(
-                  initialValue: _completedPeriod,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Completed period',
+              CompletedPeriodControls<_MyCompletedPeriod>(
+                segments: const [
+                  ButtonSegment(
+                    value: _MyCompletedPeriod.all,
+                    label: Text('All days'),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('All')),
-                    DropdownMenuItem(
-                      value: _MyCompletedPeriod.day,
-                      child: Text('Today'),
-                    ),
-                    DropdownMenuItem(
-                      value: _MyCompletedPeriod.week,
-                      child: Text('This week'),
-                    ),
-                    DropdownMenuItem(
-                      value: _MyCompletedPeriod.month,
-                      child: Text('This month'),
-                    ),
-                    DropdownMenuItem(
-                      value: _MyCompletedPeriod.custom,
-                      child: Text('Custom'),
-                    ),
-                  ],
-                  onChanged: _selectCompletedPeriod,
-                ),
-              ),
-            if (widget.completedOnly && _completedPeriod != null)
-              Container(
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ButtonSegment(
+                    value: _MyCompletedPeriod.day,
+                    label: Text('Day'),
                   ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'Previous period',
-                      icon: const Icon(Icons.chevron_left),
-                      onPressed: () => _moveCompletedPeriod(-1),
-                    ),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 90),
-                      child: Text(
-                        _completedPeriodLabel(context),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Next period',
-                      icon: const Icon(Icons.chevron_right),
-                      onPressed: _canMoveToNextCompletedPeriod
-                          ? () => _moveCompletedPeriod(1)
-                          : null,
-                    ),
-                  ],
-                ),
+                  ButtonSegment(
+                    value: _MyCompletedPeriod.week,
+                    label: Text('Week'),
+                  ),
+                  ButtonSegment(
+                    value: _MyCompletedPeriod.month,
+                    label: Text('Month'),
+                  ),
+                  ButtonSegment(
+                    value: _MyCompletedPeriod.custom,
+                    label: Text('Custom'),
+                  ),
+                ],
+                selected: _completedPeriod ?? _MyCompletedPeriod.all,
+                onSelected: _selectCompletedPeriod,
+                dateLabel: _completedPeriodLabel(context),
+                onPrevious: _completedPeriod == _MyCompletedPeriod.all
+                    ? null
+                    : () => _moveCompletedPeriod(-1),
+                onNext: _canMoveToNextCompletedPeriod
+                    ? () => _moveCompletedPeriod(1)
+                    : null,
+                onSelectDates: () =>
+                    _selectCompletedPeriod(_MyCompletedPeriod.custom),
               ),
             for (final category in categories)
               FilterChip(
@@ -239,9 +302,56 @@ class _ClientTaskListState extends State<_ClientTaskList> {
                 _selectedCategory = null;
               }),
             ),
+            if (widget.completedOnly)
+              TextButton.icon(
+                icon: const Icon(Icons.filter_alt_off_outlined),
+                label: const Text('Clear filters'),
+                onPressed:
+                    selectedCategory == null &&
+                        _completedPeriod == _MyCompletedPeriod.all
+                    ? null
+                    : () => setState(() {
+                        _selectedCategory = null;
+                        _completedPeriod = _MyCompletedPeriod.all;
+                        _customCompletedRange = null;
+                        _completedPeriodAnchor = DateUtils.dateOnly(
+                          DateTime.now(),
+                        );
+                      }),
+              ),
+            if (!widget.completedOnly) ...[
+              for (final filter in TaskDueFilter.values)
+                FilterChip(
+                  label: Text(
+                    '${dueLabel(filter)} (${categoryRows.where((row) => matchesTaskDueFilter(row.plan, row.key, filter, now)).length})',
+                  ),
+                  selected: _dueFilter == filter,
+                  onSelected: (selected) => setState(() {
+                    _dueFilter = selected ? filter : null;
+                  }),
+                ),
+              if (_dueFilter != null || selectedCategory != null)
+                TextButton.icon(
+                  icon: const Icon(Icons.filter_alt_off_outlined),
+                  label: const Text('Clear filters'),
+                  onPressed: () => setState(() {
+                    _selectedCategory = null;
+                    _dueFilter = null;
+                  }),
+                ),
+            ],
           ],
         ),
         const SizedBox(height: 12),
+        if (!widget.completedOnly && visibleRows.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              activeRows.isEmpty && archivedRows.isEmpty
+                  ? 'No tasks assigned yet'
+                  : 'No tasks match the selected filters',
+            ),
+          ),
         for (var index = 0; index < visibleRows.length; index++) ...[
           TaskRow(
             task: TaskItem(
@@ -251,12 +361,25 @@ class _ClientTaskListState extends State<_ClientTaskList> {
               unitTotal: visibleRows[index].unitTotal,
             ),
             category: visibleRows[index].category,
-            clientName: 'My task',
+            clientName: clientName(visibleRows[index].plan),
             lockedAssigneeId: taskAssigneeId(
               visibleRows[index].plan,
               visibleRows[index].key,
             ),
           ),
+          if (widget.canOpenLeads &&
+              clientNames.containsKey(visibleRows[index].plan.clientId) &&
+              isSalesTaskFeature(visibleRows[index].rawFeature))
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Open Lead'),
+                onPressed: () => context.push(
+                  '/admin/leads/${Uri.encodeComponent(visibleRows[index].plan.clientId)}',
+                ),
+              ),
+            ),
           if (index < visibleRows.length - 1) const SizedBox(height: 2),
         ],
         if (!widget.completedOnly) ...[
@@ -282,7 +405,7 @@ class _ClientTaskListState extends State<_ClientTaskList> {
                         unitTotal: row.unitTotal,
                       ),
                       category: row.category,
-                      clientName: 'My task',
+                      clientName: clientName(row.plan),
                       lockedAssigneeId: taskAssigneeId(row.plan, row.key),
                     ),
               ],
@@ -311,6 +434,20 @@ class _ClientTaskListState extends State<_ClientTaskList> {
       firstDate: DateTime(2020),
       lastDate: today,
       helpText: 'Select completed date range',
+      builder: (context, child) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            key: const ValueKey('completed-date-popup'),
+            width: 480,
+            height: 600,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: child!,
+            ),
+          ),
+        ),
+      ),
     );
     if (selectedRange == null || !mounted) return;
     setState(() {
@@ -323,6 +460,7 @@ class _ClientTaskListState extends State<_ClientTaskList> {
     final period = _completedPeriod;
     if (period == null) return null;
     return switch (period) {
+      _MyCompletedPeriod.all => null,
       _MyCompletedPeriod.day => DateTimeRange(
         start: _completedPeriodAnchor,
         end: _completedPeriodAnchor,
@@ -364,6 +502,8 @@ class _ClientTaskListState extends State<_ClientTaskList> {
     if (period == null) return;
     setState(() {
       switch (period) {
+        case _MyCompletedPeriod.all:
+          return;
         case _MyCompletedPeriod.day:
           _completedPeriodAnchor = _completedPeriodAnchor.add(
             Duration(days: direction),
@@ -395,8 +535,13 @@ class _ClientTaskListState extends State<_ClientTaskList> {
 
   String _completedPeriodLabel(BuildContext context) {
     final range = _completedDateRange;
-    if (range == null) return '';
+    if (range == null) return 'All days';
     final localizations = MaterialLocalizations.of(context);
+    if (_completedPeriod == _MyCompletedPeriod.week) {
+      final start = localizations.formatShortMonthDay(range.start);
+      final end = localizations.formatShortMonthDay(range.end);
+      return '$start - $end';
+    }
     if (_completedPeriod == _MyCompletedPeriod.month) {
       return localizations.formatMonthYear(range.start);
     }
@@ -406,7 +551,10 @@ class _ClientTaskListState extends State<_ClientTaskList> {
   }
 
   bool _matchesCompletedPeriod(_ClientTaskItem row) {
-    if (!widget.completedOnly || _completedPeriod == null) return true;
+    if (!widget.completedOnly ||
+        _completedPeriod == null ||
+        _completedPeriod == _MyCompletedPeriod.all)
+      return true;
     final completedAt = taskCompletedAt(row.plan, row.key)?.toLocal();
     final range = _completedDateRange;
     if (completedAt == null || range == null) return false;
@@ -430,7 +578,9 @@ class _ClientTaskItem {
   });
 
   String get key => taskKey(rawFeature, unitIndex);
-  String get category => parseFeature(rawFeature).category;
+  String get category => isSalesTaskFeature(rawFeature)
+      ? salesFeatureCategory
+      : parseFeature(rawFeature).category;
   Map<String, dynamic>? get workflow => plan.taskWorkflow[key];
   TaskStatus get status => taskStatus(plan, key);
   bool get completed => status == TaskStatus.completed;

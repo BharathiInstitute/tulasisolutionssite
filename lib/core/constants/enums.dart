@@ -1,25 +1,46 @@
 // Client lifecycle stages (marketing/growth funnel)
 enum ClientStage {
-  reach('Ready Agent Call'),
-  click('Message Sent'),
-  register('Call Pending'),
-  consult('Qualified / Follow-up'),
-  followUp('Follow-up'),
-  client('Won'),
-  retain('Retain / Refer'),
+  reach('Leads'),
+  click('Leads'),
+  register('Pitch'),
+  consult('Follow Up'),
+  followUp('Follow Up'),
+  client('Sale'),
+  retain('Retain'),
+  refer('Refer'),
   lost('Closed');
 
   final String displayName;
   const ClientStage(this.displayName);
+
+  static ClientStage fromStoredName(String? name) {
+    final normalized = switch (name) {
+      'reach' || 'leads' => 'click',
+      'pitch' => 'register',
+      'followUp' => 'consult',
+      'sale' => 'client',
+      _ => name,
+    };
+    return values.firstWhere(
+      (stage) => stage.name == normalized,
+      orElse: () => ClientStage.click,
+    );
+  }
+
+  static List<String> storedNamesFor(String stage) => switch (stage) {
+    'click' => const ['click', 'reach'],
+    'consult' => const ['consult', 'followUp'],
+    _ => [stage],
+  };
 }
 
 const chatFunnelStages = <ClientStage>[
-  ClientStage.reach,
   ClientStage.click,
   ClientStage.register,
   ClientStage.consult,
   ClientStage.client,
   ClientStage.retain,
+  ClientStage.refer,
   ClientStage.lost,
 ];
 
@@ -93,15 +114,4 @@ enum PaymentStatus {
 
   final String displayName;
   const PaymentStatus(this.displayName);
-}
-
-// Consultation status
-enum ConsultationStatus {
-  scheduled('Scheduled'),
-  completed('Completed'),
-  cancelled('Cancelled'),
-  noShow('No Show');
-
-  final String displayName;
-  const ConsultationStatus(this.displayName);
 }

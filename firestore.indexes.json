@@ -66,6 +66,16 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "conversations",
+      "fieldPath": "stage",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
       "collectionGroup": "message_queue",
       "fieldPath": "status",
       "indexes": [

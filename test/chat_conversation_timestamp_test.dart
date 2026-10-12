@@ -26,6 +26,62 @@ Client _funnelClient(ClientStage stage, DateTime stageChangedAt) => Client(
 );
 
 void main() {
+  test('chat contact label includes the linked customer code first', () {
+    final client = _client(
+      'client-1',
+      'Customer',
+      '9000000000',
+    ).copyWith(clientCode: 'A2135');
+    final conversation = Conversation(
+      id: 'chat-1',
+      clientId: client.id,
+      contactId: client.id,
+      contactName: 'Customer',
+      contactPhone: '9000000000',
+      createdAt: DateTime(2026, 10, 3),
+    );
+    expect(
+      conversationContactLabel(conversation, client),
+      'A2135 · Customer · 9000000000',
+    );
+    expect(
+      conversationContactLabel(conversation, null),
+      'Customer · 9000000000',
+    );
+    expect(
+      conversationContactLabel(conversation, client.copyWith(clientCode: '')),
+      'Customer · 9000000000',
+    );
+  });
+
+  test('legacy lead conversations share the Leads stage', () {
+    for (final stage in ['reach', 'click']) {
+      final conversation = Conversation(
+        id: 'legacy-$stage',
+        clientId: 'client-1',
+        contactId: 'client-1',
+        contactName: 'Lead',
+        contactPhone: '9000000000',
+        createdAt: DateTime(2026, 10, 2),
+        stage: stage,
+      );
+      expect(conversationStage(conversation), ClientStage.click);
+      expect(conversationStage(conversation).displayName, 'Leads');
+      expect(isReadyForLeadMessage(conversation, null), isTrue);
+      expect(
+        isReadyForLeadMessage(
+          conversation,
+          _client(
+            'client-1',
+            'Lead',
+            '9000000000',
+          ).copyWith(lastSendStatus: 'sent'),
+        ),
+        isFalse,
+      );
+    }
+  });
+
   group('formatConversationTimestamp', () {
     test('shows the exact time for today messages', () {
       final now = DateTime(2026, 8, 30, 15, 45, 0);
@@ -139,7 +195,11 @@ void main() {
     });
 
     test('prefers the conversation owner when phone matches are ambiguous', () {
-      final imported = _client('9160160748', 'Imported Mani', '+91 91601 60748');
+      final imported = _client(
+        '9160160748',
+        'Imported Mani',
+        '+91 91601 60748',
+      );
       final existing = _client('existing', 'Existing Mani', '9160160748');
       final conversation = Conversation(
         id: 'import-9160160748',

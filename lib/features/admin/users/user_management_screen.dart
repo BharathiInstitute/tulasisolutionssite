@@ -79,11 +79,12 @@ class UserManagementScreen extends ConsumerWidget {
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
-                      if (user.panels.isNotEmpty)
+                      if (user.panels.any(adminPanelLabels.containsKey))
                         Padding(
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
                             user.panels
+                                .where(adminPanelLabels.containsKey)
                                 .map(
                                   (panel) => adminPanelLabels[panel] ?? panel,
                                 )

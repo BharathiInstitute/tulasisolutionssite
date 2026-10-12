@@ -67,15 +67,15 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         .where((c) => c.channel == ConversationChannel.whatsapp)
         .toList();
     final archivedWhatsappConvs = chat.archivedConversations
-      .where((c) => c.channel == ConversationChannel.whatsapp)
-      .toList();
+        .where((c) => c.channel == ConversationChannel.whatsapp)
+        .toList();
     final clientsById = {for (final client in clients) client.id: client};
     final clientsByPhone = _indexClientsByPhone(clients);
     final stageConversationCounts = <String, int>{
       for (final stage in chatFunnelStages)
-      stage.name: whatsappConvs
+        stage.name: whatsappConvs
             .where((conversation) => conversationStage(conversation) == stage)
-        .length,
+            .length,
     };
     final filteredConversations = _filterConversations(
       whatsappConvs,
@@ -101,11 +101,12 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
           isLeadSendInFlight(client?.lastSendStatus)) {
         return false;
       }
-      if (conversation.stage == ClientStage.reach.name) return true;
+      if (isReadyForLeadMessage(conversation, client)) return true;
       return _showDueOnly &&
           client != null &&
           client.stage != ClientStage.client &&
           client.stage != ClientStage.retain &&
+          client.stage != ClientStage.refer &&
           client.stage != ClientStage.lost &&
           funnelReminderLabel(client, conversation.lastMessageAt).isDue;
     }).toList();
@@ -211,7 +212,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         backgroundColor: const Color(0xFF25D366),
         child: const Icon(Icons.message),
       ),
-        body: chat.error != null && conversations.isEmpty
+      body: chat.error != null && conversations.isEmpty
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -245,8 +246,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             )
           : Column(
               children: [
-                if (chat.isLoading)
-                  const LinearProgressIndicator(minHeight: 2),
+                if (chat.isLoading) const LinearProgressIndicator(minHeight: 2),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: Align(
@@ -260,9 +260,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                               ButtonSegment(
                                 value: _ChatActivityFilter.inbox,
                                 icon: const Icon(Icons.inbox_outlined),
-                                label: Text(
-                                  'Inbox (${whatsappConvs.length})',
-                                ),
+                                label: Text('Inbox (${whatsappConvs.length})'),
                               ),
                               ButtonSegment(
                                 value: _ChatActivityFilter.unread,
@@ -305,12 +303,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                                     'Any stage (${whatsappConvs.length})',
                                   ),
                                 ),
-                                ...[
-                                  ClientStage.click,
-                                  ...chatFunnelStages.where(
-                                    (stage) => stage != ClientStage.click,
-                                  ),
-                                ].map((stage) {
+                                ...chatFunnelStages.map((stage) {
                                   final count =
                                       stageConversationCounts[stage.name];
                                   return DropdownMenuItem<ClientStage?>(
@@ -413,7 +406,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                     ),
                   ),
                 ),
-                if (_selectedFunnelStage == ClientStage.reach || _showDueOnly)
+                if (_selectedFunnelStage == ClientStage.click || _showDueOnly)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                     child: Wrap(
@@ -529,7 +522,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                     onChangeStage: _changeConversationStage,
                     onSetFollowUp: _showFollowUpSettings,
                     selectionEnabled:
-                        _selectedFunnelStage == ClientStage.reach ||
+                        _selectedFunnelStage == ClientStage.click ||
                         _showDueOnly,
                     selectableConversationKeys: selectableConversationKeys,
                     selectedConversationKeys: _selectedConversationKeys,
@@ -538,7 +531,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                     isLoadingMore: chat.isLoadingMore,
                     onLoadMore: chat.loadMoreConversations,
                     conversationsAreArchived:
-                      _activityFilter == _ChatActivityFilter.archived,
+                        _activityFilter == _ChatActivityFilter.archived,
                     onSetArchived: _setConversationArchived,
                   ),
                 ),
@@ -813,6 +806,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     ClientStage.consult => Colors.indigo,
     ClientStage.client => Colors.green,
     ClientStage.retain => Colors.teal,
+    ClientStage.refer => Colors.cyan,
     ClientStage.lost => Colors.red,
     _ => Colors.grey,
   };
@@ -1232,6 +1226,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             ClientStage.consult,
             ClientStage.client,
             ClientStage.retain,
+            ClientStage.refer,
           }.contains(client.stage),
         )
         .length;
@@ -1280,12 +1275,12 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         clearFollowUp: true,
       );
     } else if (stage == ClientStage.client) {
-      final paymentConfirmed = await showDialog<bool>(
+      final orderConfirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Confirm payment'),
+          title: const Text('Confirm order'),
           content: const Text(
-            'Mark this lead as Won only after payment has been received.',
+            'Move this lead to Sale after the customer agrees to buy. Verify actual payments separately in Payments.',
           ),
           actions: [
             TextButton(
@@ -1294,12 +1289,12 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Payment received'),
+              child: const Text('Order confirmed'),
             ),
           ],
         ),
       );
-      if (paymentConfirmed != true || !mounted) return;
+      if (orderConfirmed != true || !mounted) return;
       updatedClient = updatedClient.copyWith(clearFollowUp: true);
     } else if (stage == ClientStage.register) {
       updatedClient = updatedClient.copyWith(
@@ -1309,7 +1304,10 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     }
 
     try {
-      await ref.read(firestoreServiceProvider).updateClient(updatedClient);
+      await ref.read(firestoreServiceProvider).updateClient(
+        updatedClient,
+        actor: ref.read(currentUserProfileProvider).valueOrNull,
+      );
       await ref
           .read(chatProvider)
           .updateClientConversationFilters(
@@ -1321,7 +1319,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         await _sendPackageMessage(client, qualification);
       }
       ref.invalidate(clientsListProvider);
-        await ref.read(chatProvider).loadConversations();
+      await ref.read(chatProvider).loadConversations();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1389,7 +1387,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             stage: stage.name,
           );
       ref.invalidate(clientsListProvider);
-        await ref.read(chatProvider).loadConversations();
+      await ref.read(chatProvider).loadConversations();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Linked to ${stage.displayName}')),
@@ -1706,6 +1704,15 @@ String conversationSelectionKey(Conversation conversation) =>
 bool isLeadSendInFlight(String? status) =>
     status == 'pending' || status == 'sending' || status == 'retrying';
 
+bool isReadyForLeadMessage(Conversation conversation, Client? client) {
+  if (conversationStage(conversation) != ClientStage.click ||
+      client?.doNotContact == true ||
+      isLeadSendInFlight(client?.lastSendStatus))
+    return false;
+  return client?.lastSendStatus == 'failed' ||
+      (client?.lastSendStatus == null && conversation.lastMessageAt == null);
+}
+
 Client? findClientByPhone(String phone, List<Client> clients) {
   final normalizedPhone = normalizePhone(phone);
   if (normalizedPhone.isEmpty) return null;
@@ -1729,11 +1736,15 @@ Client? findClientForConversation(
 }
 
 ClientStage conversationStage(Conversation conversation) {
-  if (conversation.stage == 'refer') return ClientStage.retain;
-  for (final stage in chatFunnelStages) {
-    if (stage.name == conversation.stage) return stage;
-  }
-  return ClientStage.click;
+  return ClientStage.fromStoredName(conversation.stage);
+}
+
+String conversationContactLabel(Conversation conversation, Client? client) {
+  return [
+    client?.clientCode.trim() ?? '',
+    conversation.contactName.trim(),
+    conversation.contactPhone.trim(),
+  ].where((value) => value.isNotEmpty).join(' · ');
 }
 
 String formatConversationTimestamp(DateTime? dt, {DateTime? now}) {
@@ -1883,9 +1894,7 @@ class _ConversationTile extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          c.contactPhone.trim().isEmpty
-                              ? c.contactName
-                              : '${c.contactName} · ${c.contactPhone}',
+                          conversationContactLabel(c, client),
                           style: TextStyle(
                             fontWeight: hasUnread
                                 ? FontWeight.bold
@@ -2080,6 +2089,7 @@ class _ConversationTile extends StatelessWidget {
     ClientStage.followUp => Colors.purple,
     ClientStage.client => Colors.green,
     ClientStage.retain => Colors.teal,
+    ClientStage.refer => Colors.cyan,
     ClientStage.lost => Colors.red,
   };
 
@@ -2461,9 +2471,9 @@ FunnelReminder funnelReminderLabel(
     return const FunnelReminder('Call now or set next call', isDue: true);
   }
   if (client.stage == ClientStage.reach) {
-    return const FunnelReminder('Ready Agent Call');
+    return const FunnelReminder('Leads');
   }
-  if (client.stage == ClientStage.client) return const FunnelReminder('Won');
+  if (client.stage == ClientStage.client) return const FunnelReminder('Sale');
   if (client.stage == ClientStage.lost) {
     return FunnelReminder(
       'Closed: ${client.closedReason ?? 'Reason required'}',

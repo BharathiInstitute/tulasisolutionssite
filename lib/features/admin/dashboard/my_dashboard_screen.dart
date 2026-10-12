@@ -14,7 +14,7 @@ class MyDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final staffIds = ref.watch(currentStaffIdsProvider);
-    final plansAsync = ref.watch(allPlansStreamProvider);
+    final plansAsync = ref.watch(visiblePlansProvider);
 
     return AppShell(
       isAdmin: true,

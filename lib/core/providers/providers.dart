@@ -1,10 +1,16 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/firebase_service.dart';
 import '../models/models.dart';
-import '../models/weekly_report.dart';
 import '../chat/chat.dart';
 import '../performance/performance_models.dart';
+import '../tasks/task_save_controller.dart';
+import '../tasks/plan_changes.dart';
+import '../tasks/pending_save_warning_stub.dart'
+    if (dart.library.js_interop) '../tasks/pending_save_warning_web.dart';
 
 // Firebase service providers
 final firebaseAuthServiceProvider = Provider((ref) => FirebaseAuthService());
@@ -28,7 +34,40 @@ final currentUserProfileProvider = FutureProvider<AppUser?>((ref) async {
   final authService = ref.watch(firebaseAuthServiceProvider);
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return null;
-  return authService.getUserProfile(user.uid);
+  final cancelled = Completer<void>();
+  Timer? retryTimer;
+  ref.onDispose(() {
+    retryTimer?.cancel();
+    if (!cancelled.isCompleted) cancelled.complete();
+  });
+  Future<AppUser?> loadProfile() async {
+    var retryDelay = const Duration(milliseconds: 500);
+    for (var attempt = 0; attempt < 3 && !cancelled.isCompleted; attempt++) {
+      try {
+        return await authService.getUserProfile(user.uid);
+      } catch (error) {
+        if (cancelled.isCompleted) return null;
+        if (!isRetryableProfileLoadError(error) || attempt == 2) rethrow;
+        final retryReady = Completer<void>();
+        retryTimer = Timer(retryDelay, retryReady.complete);
+        await Future.any([retryReady.future, cancelled.future]);
+        retryTimer = null;
+        retryDelay *= 2;
+      }
+    }
+    return null;
+  }
+
+  return loadProfile().timeout(
+    const Duration(seconds: 20),
+    onTimeout: () {
+      retryTimer?.cancel();
+      if (!cancelled.isCompleted) cancelled.complete();
+      throw TimeoutException(
+        'Timed out checking staff access. Check your connection and retry.',
+      );
+    },
+  );
 });
 
 final currentUserProfileStreamProvider = StreamProvider<AppUser?>((ref) {
@@ -45,6 +84,61 @@ final clientsListProvider = FutureProvider<List<Client>>((ref) {
   return firestoreService.getClientsOnce();
 });
 
+final StateProvider<Map<String, Client>> confirmedSalesClientsProvider =
+    StateProvider<Map<String, Client>>((ref) {
+      ref.watch(authStateProvider.select((state) => state.valueOrNull?.uid));
+      ref.listen(clientsListProvider, (_, next) {
+        if (next.isLoading || next.hasError) return;
+        final clients = next.valueOrNull;
+        if (clients == null) return;
+        final controller = ref.read(confirmedSalesClientsProvider.notifier);
+        if (controller.state.isEmpty) return;
+        if (clients is ClientSnapshotList && clients.serverConfirmed) {
+          controller.state = {};
+        } else {
+          final revisions = {
+            for (final client in clients)
+              client.id: client.salesRecord['revision'],
+          };
+          final remaining = {
+            for (final entry in controller.state.entries)
+              if (revisions[entry.key] != entry.value.salesRecord['revision'])
+                entry.key: entry.value,
+          };
+          if (remaining.length != controller.state.length) {
+            controller.state = remaining;
+          }
+        }
+      });
+      return {};
+    });
+
+AsyncValue<List<Client>> _withConfirmedSalesClients(
+  AsyncValue<List<Client>> source,
+  Map<String, Client> confirmed,
+) {
+  if (source.hasError || !source.hasValue) return source;
+  final clients = source.requireValue;
+  final ids = clients.map((client) => client.id).toSet();
+  final visible = AsyncData<List<Client>>([
+    for (final client in clients) confirmed[client.id] ?? client,
+    for (final client in confirmed.values)
+      if (!ids.contains(client.id)) client,
+  ]);
+  return source.isLoading
+      ? const AsyncLoading<List<Client>>().copyWithPrevious(
+          visible,
+          isRefresh: source.isRefreshing,
+        )
+      : visible;
+}
+
+final visibleClientsProvider = Provider<AsyncValue<List<Client>>>((ref) {
+  final source = ref.watch(clientsListProvider);
+  final confirmed = ref.watch(confirmedSalesClientsProvider);
+  return _withConfirmedSalesClients(source, confirmed);
+});
+
 // Single client provider
 final clientProvider = StreamProvider.family<Client?, String>((
   ref,
@@ -54,11 +148,6 @@ final clientProvider = StreamProvider.family<Client?, String>((
   final client = await firestoreService.getClient(clientId);
   yield client;
 });
-
-final weeklyReportsProvider = StreamProvider.family<List<WeeklyReport>, String>(
-  (ref, clientId) =>
-      ref.watch(firestoreServiceProvider).getWeeklyReportsStream(clientId),
-);
 
 // Setup checklist items provider
 final checklistItemsProvider =
@@ -74,20 +163,6 @@ final goalsProvider = StreamProvider.family<List<Goal>, String>((
 ) {
   final firestoreService = ref.watch(firestoreServiceProvider);
   return firestoreService.getGoalsStream(clientId);
-});
-
-// Consultations provider
-final consultationsProvider = StreamProvider.family<List<Consultation>, String>(
-  (ref, clientId) {
-    final firestoreService = ref.watch(firestoreServiceProvider);
-    return firestoreService.getConsultationsStream(clientId);
-  },
-);
-
-// All consultations across clients (admin overview)
-final allConsultationsProvider = StreamProvider<List<Consultation>>((ref) {
-  final firestoreService = ref.watch(firestoreServiceProvider);
-  return firestoreService.getAllConsultationsStream();
 });
 
 // All users (admin user management)
@@ -109,6 +184,108 @@ final allPlansStreamProvider = StreamProvider<List<Plan>>((ref) {
   if (user == null) return Stream.value(<Plan>[]);
   final firestoreService = ref.watch(firestoreServiceProvider);
   return firestoreService.getAllPlansStream();
+});
+
+final pendingSaveWarningProvider = Provider<void Function() Function()>(
+  (ref) => registerPendingSaveWarning,
+);
+
+final taskSavesProvider =
+    StateNotifierProvider<TaskSaveController, Map<String, TaskSave>>((ref) {
+      ref.watch(authStateProvider.select((state) => state.valueOrNull?.uid));
+      final controller = TaskSaveController(
+        onConfirmed: (save) {
+          ref.invalidate(allPlansProvider);
+          if (save.refreshClientId != null) {
+            ref.invalidate(clientsListProvider);
+            ref.invalidate(clientProvider(save.refreshClientId!));
+          }
+        },
+      );
+      void Function()? removeWarning;
+      controller.addListener((saves) {
+        final unsaved = saves.values.any(
+          (save) => save.phase != TaskSavePhase.confirmed,
+        );
+        if (unsaved && removeWarning == null) {
+          removeWarning = ref.read(pendingSaveWarningProvider)();
+        } else if (!unsaved && removeWarning != null) {
+          removeWarning!();
+          removeWarning = null;
+        }
+      }, fireImmediately: false);
+      ref.onDispose(() => removeWarning?.call());
+      return controller;
+    });
+
+final visiblePlansProvider = Provider<AsyncValue<List<Plan>>>((ref) {
+  final source = ref.watch(allPlansStreamProvider);
+  ref.watch(taskSavesProvider);
+  ref.listen(allPlansStreamProvider, (previous, next) {
+    final plans = next.valueOrNull;
+    if (!next.isLoading && !next.hasError && plans != null) {
+      ref.read(taskSavesProvider.notifier).reconcile(plans);
+    }
+  });
+  final controller = ref.read(taskSavesProvider.notifier);
+  return source.whenData(controller.visiblePlans);
+});
+
+final taskClientsProvider = FutureProvider<List<Client>>((ref) async {
+  ref.watch(
+    visiblePlansProvider.select((state) {
+      final ids =
+          state.valueOrNull?.map((plan) => plan.clientId).toSet().toList() ??
+          <String>[];
+      ids.sort();
+      return jsonEncode(ids);
+    }),
+  );
+  final clientIds = {
+    for (final plan in ref.read(visiblePlansProvider).valueOrNull ?? <Plan>[])
+      if (plan.clientId.isNotEmpty && plan.clientId != '__internal_practice__')
+        plan.clientId,
+  };
+  final clients = await ref.watch(clientsListProvider.future);
+  final byId = {for (final client in clients) client.id: client};
+  final missingIds = clientIds.where((id) => !byId.containsKey(id)).toList();
+  if (missingIds.isEmpty) return clients;
+  final service = ref.read(firestoreServiceProvider);
+  final resolved = await Future.wait(
+    missingIds.map(
+      (id) => service
+          .getClient(id, serverOnly: true)
+          .timeout(const Duration(seconds: 20)),
+    ),
+  );
+  return [
+    ...clients,
+    for (final client in resolved)
+      if (client != null) client,
+  ];
+});
+
+final visibleTaskClientsProvider = Provider<AsyncValue<List<Client>>>((ref) {
+  final source = ref.watch(taskClientsProvider);
+  final latest =
+      ref.watch(visibleClientsProvider).valueOrNull ?? const <Client>[];
+  final confirmed = ref.watch(confirmedSalesClientsProvider);
+  return _withConfirmedSalesClients(source, {
+    for (final client in latest) client.id: client,
+    ...confirmed,
+  });
+});
+
+final visiblePlansOnceProvider = Provider<AsyncValue<List<Plan>>>((ref) {
+  final source = ref.watch(allPlansProvider);
+  ref.watch(taskSavesProvider);
+  ref.listen(allPlansProvider, (previous, next) {
+    final plans = next.valueOrNull;
+    if (!next.isLoading && !next.hasError && plans != null) {
+      ref.read(taskSavesProvider.notifier).reconcile(plans);
+    }
+  });
+  return source.whenData(ref.read(taskSavesProvider.notifier).visiblePlans);
 });
 
 final paymentsProvider = StreamProvider<List<PaymentRecord>>((ref) {
@@ -185,6 +362,27 @@ final plansProvider = StreamProvider.family<List<Plan>, String>((
   final firestoreService = ref.watch(firestoreServiceProvider);
   return firestoreService.getPlansStream(clientId);
 });
+
+final visibleClientPlansProvider =
+    Provider.family<AsyncValue<List<Plan>>, String>((ref, clientId) {
+      final source = ref.watch(plansProvider(clientId));
+      ref.watch(taskSavesProvider);
+      ref.listen(plansProvider(clientId), (previous, next) {
+        final plans = next.valueOrNull;
+        if (!next.isLoading && !next.hasError && plans != null) {
+          ref
+              .read(taskSavesProvider.notifier)
+              .reconcile(plans, clientId: clientId);
+        }
+      });
+      return source.whenData(
+        (plans) => ref
+            .read(taskSavesProvider.notifier)
+            .visiblePlans(plans)
+            .where((plan) => plan.clientId == clientId)
+            .toList(),
+      );
+    });
 
 // Software Stage provider
 final softwareStageProvider = StreamProvider.family<SoftwareStageData?, String>(

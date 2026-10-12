@@ -6,8 +6,7 @@ enum TaskStatus { notAssigned, assigned, started, draftCycle, completed }
 enum DraftCycleStage { instructions, working, confirmation }
 
 const adminPanelLabels = <String, String>{
-  'leads': 'Leads',
-  'clients': 'Clients',
+  'leads': 'Sales Pipeline / Sales Tasks',
   'payments': 'Payments',
   'tasks': 'Tasks',
   'myDashboard': 'My Dashboard',
@@ -18,11 +17,7 @@ const adminPanelLabels = <String, String>{
   'myPerformance': 'My performance',
 };
 
-const defaultStaffPanels = <String>{
-  'myDashboard',
-  'myPerformance',
-  'myTasks',
-};
+const defaultStaffPanels = <String>{'myDashboard', 'myPerformance', 'myTasks'};
 
 List<String> _normalizePlanFeatures(List<String> features) {
   final normalized = <String>[];
@@ -120,8 +115,16 @@ class AppUser {
 
   factory AppUser.fromFirestore(DocumentSnapshot doc, {bool? isAdminOverride}) {
     final data = doc.data() as Map<String, dynamic>;
+    return AppUser.fromMap(doc.id, data, isAdminOverride: isAdminOverride);
+  }
+
+  factory AppUser.fromMap(
+    String uid,
+    Map<String, dynamic> data, {
+    bool? isAdminOverride,
+  }) {
     return AppUser(
-      uid: doc.id,
+      uid: uid,
       email: data['email'] ?? '',
       name: data['name'] ?? '',
       isAdmin: isAdminOverride ?? data['isAdmin'] ?? false,
@@ -132,7 +135,9 @@ class AppUser {
       team: data['team'] ?? '',
       panels: (data['panels'] as List<dynamic>? ?? const [])
           .map((panel) => panel.toString())
-          .where(adminPanelLabels.containsKey)
+          .where(
+            (panel) => adminPanelLabels.containsKey(panel) || panel == 'clients',
+          )
           .toList(),
     );
   }
@@ -173,6 +178,10 @@ class Client {
   final int sendAttemptCount;
   final String? lastCampaignId;
   final bool doNotContact;
+  final List<Map<String, dynamic>> salesContacts;
+  final Map<String, dynamic> salesRecord;
+  final String salesProgress;
+  final String? referredByClientId;
 
   Client({
     required this.id,
@@ -205,6 +214,10 @@ class Client {
     this.sendAttemptCount = 0,
     this.lastCampaignId,
     this.doNotContact = false,
+    this.salesContacts = const [],
+    this.salesRecord = const {},
+    this.salesProgress = '',
+    this.referredByClientId,
   });
 
   factory Client.fromFirestore(DocumentSnapshot doc) {
@@ -219,10 +232,7 @@ class Client {
       contactPhone: data['contactPhone'] ?? '',
       alternatePhone: data['alternatePhone'],
       assignedManager: data['assignedManager'],
-      stage: ClientStage.values.firstWhere(
-        (s) => s.name == (data['stage'] == 'refer' ? 'retain' : data['stage']),
-        orElse: () => ClientStage.reach,
-      ),
+      stage: ClientStage.fromStoredName(data['stage']?.toString()),
       createdDate: (data['createdDate'] as Timestamp).toDate(),
       updatedDate: data['updatedDate'] != null
           ? (data['updatedDate'] as Timestamp).toDate()
@@ -232,6 +242,13 @@ class Client {
           ? (data['followUpAt'] as Timestamp).toDate()
           : null,
       followUpNotes: data['followUpNotes'],
+      salesContacts: (data['salesContacts'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((entry) => Map<String, dynamic>.from(entry))
+          .toList(),
+      salesRecord: Map<String, dynamic>.from(data['salesRecord'] as Map? ?? const {}),
+      salesProgress: data['salesProgress']?.toString() ?? '',
+      referredByClientId: data['referredByClientId']?.toString(),
       intentConfirmed: data['intentConfirmed'] == true,
       roleConfirmed: data['roleConfirmed'] == true,
       decisionMakerRole: data['decisionMakerRole'],
@@ -264,7 +281,7 @@ class Client {
       'contactPhone': contactPhone,
       'alternatePhone': alternatePhone,
       'assignedManager': assignedManager,
-      'stage': stage.name,
+      'stage': ClientStage.fromStoredName(stage.name).name,
       'createdDate': Timestamp.fromDate(createdDate),
       'updatedDate': updatedDate != null
           ? Timestamp.fromDate(updatedDate!)
@@ -291,6 +308,9 @@ class Client {
       'sendAttemptCount': sendAttemptCount,
       'lastCampaignId': lastCampaignId,
       'doNotContact': doNotContact,
+      'salesRecord': salesRecord,
+      'salesProgress': salesProgress,
+      'referredByClientId': referredByClientId,
     };
   }
 
@@ -330,6 +350,9 @@ class Client {
     int? sendAttemptCount,
     String? lastCampaignId,
     bool? doNotContact,
+    Map<String, dynamic>? salesRecord,
+    String? salesProgress,
+    String? referredByClientId,
   }) {
     return Client(
       id: id ?? this.id,
@@ -374,6 +397,10 @@ class Client {
       sendAttemptCount: sendAttemptCount ?? this.sendAttemptCount,
       lastCampaignId: lastCampaignId ?? this.lastCampaignId,
       doNotContact: doNotContact ?? this.doNotContact,
+      salesContacts: salesContacts,
+      salesRecord: salesRecord ?? this.salesRecord,
+      salesProgress: salesProgress ?? (stage != null && stage != this.stage ? '' : this.salesProgress),
+      referredByClientId: referredByClientId ?? this.referredByClientId,
     );
   }
 }
@@ -832,14 +859,16 @@ class Plan {
   bool get isCompleted =>
       features.isNotEmpty && completedFeatures.length >= features.length;
 
-  factory Plan.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+  factory Plan.fromFirestore(DocumentSnapshot doc) =>
+      Plan.fromData(doc.id, doc.data() as Map<String, dynamic>);
+
+  factory Plan.fromData(String id, Map<String, dynamic> data) {
     final type = PlanType.values.firstWhere(
       (p) => p.name == data['type'],
       orElse: () => PlanType.setup,
     );
     return Plan(
-      id: doc.id,
+      id: id,
       clientId: data['clientId'] ?? '',
       templateId: data['templateId'],
       type: type,
@@ -1224,50 +1253,6 @@ class Goal {
   }
 }
 
-// Consultation model
-class Consultation {
-  final String id;
-  final String clientId;
-  final DateTime dateTime;
-  final ConsultationStatus status;
-  final String? notes;
-  final String? managerId;
-
-  Consultation({
-    required this.id,
-    required this.clientId,
-    required this.dateTime,
-    required this.status,
-    this.notes,
-    this.managerId,
-  });
-
-  factory Consultation.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return Consultation(
-      id: doc.id,
-      clientId: data['clientId'] ?? '',
-      dateTime: (data['dateTime'] as Timestamp).toDate(),
-      status: ConsultationStatus.values.firstWhere(
-        (s) => s.name == data['status'],
-        orElse: () => ConsultationStatus.scheduled,
-      ),
-      notes: data['notes'],
-      managerId: data['managerId'],
-    );
-  }
-
-  Map<String, dynamic> toFirestore() {
-    return {
-      'clientId': clientId,
-      'dateTime': Timestamp.fromDate(dateTime),
-      'status': status.name,
-      'notes': notes,
-      'managerId': managerId,
-    };
-  }
-}
-
 // Guarantee Event model
 class GuaranteeEvent {
   final String id;
@@ -1304,4 +1289,3 @@ class GuaranteeEvent {
     };
   }
 }
-

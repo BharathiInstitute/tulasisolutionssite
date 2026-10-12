@@ -2,7 +2,6 @@ import '../models/models.dart';
 
 const adminPanelRoutes = <String, String>{
   'leads': '/admin/leads',
-  'clients': '/admin/consultations',
   'payments': '/admin/payments',
   'tasks': '/admin/tasks',
   'myDashboard': '/admin/my-dashboard',
@@ -15,11 +14,10 @@ const adminPanelRoutes = <String, String>{
 
 const _adminRoutePanels = <String, String>{
   '/admin/leads': 'leads',
-  '/admin/consultations': 'clients',
+  '/admin/sales-tasks': 'leads',
   '/admin/payments': 'payments',
   '/admin/tasks': 'tasks',
   '/admin/completed-tasks': 'tasks',
-  '/admin/reports': 'tasks',
   '/admin/my-dashboard': 'myDashboard',
   '/admin/my-tasks': 'myTasks',
   '/admin/my-completed-tasks': 'myTasks',

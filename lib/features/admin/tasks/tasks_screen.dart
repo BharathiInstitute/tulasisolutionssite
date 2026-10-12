@@ -11,18 +11,26 @@ import 'package:tulasisolutionssite/core/widgets/app_drawer.dart';
 import 'package:tulasisolutionssite/core/widgets/feature_progress_widgets.dart';
 import 'package:tulasisolutionssite/core/widgets/shared_widgets.dart';
 import 'package:tulasisolutionssite/core/tasks/task_workflow.dart';
+import 'package:tulasisolutionssite/core/tasks/task_save_controller.dart';
+import 'sales_record_dialog.dart';
+import 'task_deletion_dialog.dart';
+import 'unlinked_plan_repair.dart';
+import '../../../core/widgets/task_tracking_widgets.dart';
+import '../../../core/widgets/retained_task_edits.dart';
 
 const _internalPracticeClientId = '__internal_practice__';
-const _internalPracticePlanId = '__internal_practice_tasks__';
+const _internalPracticePlanId = 'internal-practice-tasks';
 const _internalPracticeLabel = 'Practice (Internal)';
+const _unlinkedClientFilter = '__unlinked_tasks__';
 
 class TasksScreen extends ConsumerWidget {
   const TasksScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final plansAsync = ref.watch(allPlansStreamProvider);
+    final plansAsync = ref.watch(visiblePlansProvider);
     final clientsAsync = ref.watch(clientsListProvider);
+    final taskClientsAsync = ref.watch(taskClientsProvider);
     final staff = ref.watch(allUsersProvider).valueOrNull ?? const <AppUser>[];
     return AppShell(
       isAdmin: true,
@@ -32,7 +40,11 @@ class TasksScreen extends ConsumerWidget {
         IconButton(
           tooltip: 'Refresh',
           icon: const Icon(Icons.refresh),
-          onPressed: () => ref.invalidate(allPlansStreamProvider),
+          onPressed: () {
+            ref.invalidate(allPlansStreamProvider);
+            ref.invalidate(clientsListProvider);
+            ref.invalidate(taskClientsProvider);
+          },
         ),
       ],
       floatingActionButton: plansAsync.maybeWhen(
@@ -41,7 +53,7 @@ class TasksScreen extends ConsumerWidget {
             onPressed: () async {
               await showDialog<void>(
                 context: context,
-                builder: (_) => _CustomTaskDialog(
+                builder: (_) => CustomTaskDialog(
                   plans: plans,
                   clients: clients,
                   staff: staff,
@@ -59,17 +71,21 @@ class TasksScreen extends ConsumerWidget {
         loading: () => const LoadingWidget(),
         error: (error, stackTrace) =>
             CustomErrorWidget(message: 'Error loading tasks: $error'),
-        data: (plans) => clientsAsync.when(
+        data: (plans) => taskClientsAsync.when(
+          skipLoadingOnReload: true,
           loading: () => const LoadingWidget(),
-          error: (error, stackTrace) =>
-              CustomErrorWidget(message: 'Error loading clients: $error'),
+          error: (error, stackTrace) => CustomErrorWidget(
+            message: 'Error loading task clients: $error',
+            onRetry: () {
+              ref.invalidate(clientsListProvider);
+              ref.invalidate(taskClientsProvider);
+            },
+          ),
           data: (clients) => _TaskOverview(
             plans: plans,
             staff: staff,
             completedOnly: false,
-            clientNames: {
-              for (final client in clients) client.id: client.name,
-            },
+            clientNames: {for (final client in clients) client.id: client.name},
           ),
         ),
       ),
@@ -82,8 +98,8 @@ class CompletedTasksScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final plansAsync = ref.watch(allPlansStreamProvider);
-    final clientsAsync = ref.watch(clientsListProvider);
+    final plansAsync = ref.watch(visiblePlansProvider);
+    final clientsAsync = ref.watch(taskClientsProvider);
     final staff = ref.watch(allUsersProvider).valueOrNull ?? const <AppUser>[];
     return AppShell(
       isAdmin: true,
@@ -93,7 +109,11 @@ class CompletedTasksScreen extends ConsumerWidget {
         IconButton(
           tooltip: 'Refresh',
           icon: const Icon(Icons.refresh),
-          onPressed: () => ref.invalidate(allPlansStreamProvider),
+          onPressed: () {
+            ref.invalidate(allPlansStreamProvider);
+            ref.invalidate(clientsListProvider);
+            ref.invalidate(taskClientsProvider);
+          },
         ),
       ],
       body: plansAsync.when(
@@ -101,16 +121,20 @@ class CompletedTasksScreen extends ConsumerWidget {
         error: (error, stackTrace) =>
             CustomErrorWidget(message: 'Error loading tasks: $error'),
         data: (plans) => clientsAsync.when(
+          skipLoadingOnReload: true,
           loading: () => const LoadingWidget(),
-          error: (error, stackTrace) =>
-              CustomErrorWidget(message: 'Error loading clients: $error'),
+          error: (error, stackTrace) => CustomErrorWidget(
+            message: 'Error loading task clients: $error',
+            onRetry: () {
+              ref.invalidate(clientsListProvider);
+              ref.invalidate(taskClientsProvider);
+            },
+          ),
           data: (clients) => _TaskOverview(
             plans: plans,
             staff: staff,
             completedOnly: true,
-            clientNames: {
-              for (final client in clients) client.id: client.name,
-            },
+            clientNames: {for (final client in clients) client.id: client.name},
           ),
         ),
       ),
@@ -118,22 +142,29 @@ class CompletedTasksScreen extends ConsumerWidget {
   }
 }
 
-class _CustomTaskDialog extends ConsumerStatefulWidget {
+class CustomTaskDialog extends ConsumerStatefulWidget {
   final List<Plan> plans;
   final List<Client> clients;
   final List<AppUser> staff;
+  final bool selfAssignOnly;
+  final String? initialClientId;
+  final bool salesOnly;
 
-  const _CustomTaskDialog({
+  const CustomTaskDialog({
+    super.key,
     required this.plans,
     required this.clients,
     required this.staff,
+    this.selfAssignOnly = false,
+    this.initialClientId,
+    this.salesOnly = false,
   });
 
   @override
-  ConsumerState<_CustomTaskDialog> createState() => _CustomTaskDialogState();
+  ConsumerState<CustomTaskDialog> createState() => _CustomTaskDialogState();
 }
 
-class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
+class _CustomTaskDialogState extends ConsumerState<CustomTaskDialog> {
   final _titleController = TextEditingController();
   final _reasonController = TextEditingController();
   String? _clientId;
@@ -144,6 +175,16 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
   DateTime? _dueAt;
   String? _error;
   bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _clientId = widget.initialClientId;
+    if (widget.salesOnly) {
+      _category = salesFeatureCategory;
+      _subcategory = 'Call';
+    }
+  }
 
   @override
   void dispose() {
@@ -159,7 +200,15 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
           .firstOrNull;
     }
     final clientPlans =
-        widget.plans.where((plan) => plan.clientId == _clientId).toList()
+        widget.plans
+            .where(
+              (plan) =>
+                  plan.clientId == _clientId &&
+                  (_category == salesFeatureCategory
+                      ? plan.name == 'Sales Tasks'
+                      : plan.name != 'Sales Tasks'),
+            )
+            .toList()
           ..sort((left, right) => right.startDate.compareTo(left.startDate));
     return clientPlans.firstOrNull;
   }
@@ -173,11 +222,46 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2035),
     );
-    if (picked != null) setState(() => _dueAt = picked);
+    if (picked == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: _dueAt == null
+          ? TimeOfDay.now()
+          : TimeOfDay.fromDateTime(_dueAt!),
+    );
+    if (time != null && mounted) {
+      setState(
+        () => _dueAt = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          time.hour,
+          time.minute,
+        ),
+      );
+    }
   }
 
   Future<void> _save() async {
-    final plan = _selectedPlan;
+    final currentProfile = ref.read(currentUserProfileProvider).valueOrNull;
+    if (_category == salesFeatureCategory &&
+        currentProfile?.canAccessPanel('tasks') != true) {
+      setState(
+        () => _error = 'Sales task creation requires Assign Tasks access.',
+      );
+      return;
+    }
+    if (widget.selfAssignOnly &&
+        (currentProfile == null ||
+            !ref.read(currentStaffIdsProvider).contains(currentProfile.uid))) {
+      setState(() => _error = 'Sign in to create a task for yourself.');
+      return;
+    }
+    final personalCreation =
+        widget.selfAssignOnly &&
+        currentProfile?.canAccessPanel('tasks') != true &&
+        currentProfile?.canAccessPanel('plans') != true;
+    final plan = personalCreation ? null : _selectedPlan;
     final title = _titleController.text.trim();
     final reason = _reasonController.text.trim();
     final subcategories = _category == null
@@ -187,10 +271,20 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
         title.isEmpty ||
         _category == null ||
         (subcategories.isNotEmpty && _subcategory == null) ||
-        reason.isEmpty) {
+        (reason.isEmpty && _category != salesFeatureCategory)) {
       setState(
         () => _error =
             'Client, title, category, subcategory, and reason are required.',
+      );
+      return;
+    }
+    if (_category == salesFeatureCategory &&
+        (_isInternalPractice ||
+            _dueAt == null ||
+            (!widget.selfAssignOnly && _assignedTo == null))) {
+      setState(
+        () => _error =
+            'Sales tasks need a customer, assigned staff, and due date/time.',
       );
       return;
     }
@@ -203,12 +297,16 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
       final targetPlan =
           plan ??
           Plan(
-            id: _isInternalPractice
+            id: _isInternalPractice && !personalCreation
                 ? _internalPracticePlanId
                 : const Uuid().v4(),
             clientId: _clientId!,
             type: PlanType.setup,
-            name: _isInternalPractice ? _internalPracticeLabel : 'Custom Tasks',
+            name: _isInternalPractice
+                ? _internalPracticeLabel
+                : _category == salesFeatureCategory
+                ? 'Sales Tasks'
+                : 'Custom Tasks',
             price: 0,
             features: const [],
             startDate: DateTime.now(),
@@ -219,15 +317,29 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
         title: title,
         order: targetPlan.tasks.length,
         source: ClientTaskSource.customIncluded,
-        addedReason: reason,
+        addedReason: reason.isEmpty ? title : reason,
       );
-      final updatedPlan = targetPlan.copyWith(
-        features: [...targetPlan.features, task.feature],
-        tasks: [...targetPlan.tasks, task],
+      if (_category == salesFeatureCategory &&
+          targetPlan.features.contains(task.feature)) {
+        setState(
+          () => _error =
+              'A sales task with this action and title already exists. Use a different title.',
+        );
+        return;
+      }
+      final createdAt = DateTime.now();
+      final updatedPlan = recordTaskCreation(
+        targetPlan.copyWith(
+          features: [...targetPlan.features, task.feature],
+          tasks: [...targetPlan.tasks, task],
+        ),
+        task.feature,
+        actor: currentProfile,
+        now: createdAt,
       );
-      final assignedUser = widget.staff
-          .where((user) => user.uid == _assignedTo)
-          .firstOrNull;
+      final assignedUser = widget.selfAssignOnly
+          ? currentProfile
+          : widget.staff.where((user) => user.uid == _assignedTo).firstOrNull;
       final assignedPlan = updateTaskAssignment(
         updatedPlan,
         task.feature,
@@ -238,19 +350,29 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
                   ? assignedUser.email
                   : assignedUser.name),
         priority: _priority,
+        actor: currentProfile,
+        now: createdAt,
       );
       final detailedPlan = updateTaskManagementDetails(
         assignedPlan,
         task.feature,
         dueAt: _dueAt,
         internalNotes: reason,
+        actor: currentProfile,
       );
       final service = ref.read(firestoreServiceProvider);
-      if (plan == null) {
-        await service.createPlan(detailedPlan);
-      } else {
-        await service.updatePlan(detailedPlan);
-      }
+      ref
+          .read(taskSavesProvider.notifier)
+          .submit(
+            desired: detailedPlan,
+            previous: plan,
+            label: title,
+            workflowKey: task.feature,
+            lockedAssigneeId: widget.selfAssignOnly ? assignedUser?.uid : null,
+            persist: () => plan == null
+                ? service.createPlan(detailedPlan, ifAbsent: true)
+                : service.updatePlan(detailedPlan, previous: plan),
+          );
       if (mounted) Navigator.pop(context);
     } catch (error) {
       if (mounted) setState(() => _error = 'Could not add task: $error');
@@ -261,87 +383,125 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
 
   @override
   Widget build(BuildContext context) {
-    const taskStages = {
-      ClientStage.client,
-      ClientStage.retain,
-    };
+    final currentProfile = ref.watch(currentUserProfileProvider).valueOrNull;
+    final selfAssignmentReady =
+        !widget.selfAssignOnly ||
+        ref.watch(currentStaffIdsProvider).contains(currentProfile?.uid);
+    const taskStages = {ClientStage.client, ClientStage.retain, ClientStage.refer};
     final taskClients =
         widget.clients
             .where(
               (client) =>
-                  taskStages.contains(client.stage) ||
-                  widget.plans.any((plan) => plan.clientId == client.id),
+                  !client.isArchived && taskStages.contains(client.stage),
             )
             .toList()
           ..sort((left, right) => left.name.compareTo(right.name));
     return AlertDialog(
-      title: const Text('Task Details'),
+      title: Text(widget.salesOnly ? 'Create Sales Task' : 'Task Details'),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                initialValue: _clientId,
-                decoration: const InputDecoration(labelText: 'Client'),
-                hint: taskClients.isEmpty
-                  ? const Text('No Won or Retain / Refer clients found')
-                    : null,
-                items:
-                    taskClients
-                        .map(
-                          (client) => DropdownMenuItem(
-                            value: client.id,
-                            child: Text(client.name),
-                          ),
+              if (widget.initialClientId != null)
+                InputDecorator(
+                  decoration: const InputDecoration(labelText: 'Customer'),
+                  child: Text(
+                    widget.clients
+                        .firstWhere(
+                          (client) => client.id == widget.initialClientId,
                         )
-                        .toList()
-                      ..insert(
-                        0,
-                        const DropdownMenuItem(
-                          value: _internalPracticeClientId,
-                          child: Text(_internalPracticeLabel),
+                        .name,
+                  ),
+                )
+              else
+                DropdownButtonFormField<String>(
+                  key: const ValueKey('create-task-client'),
+                  initialValue: _clientId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Client'),
+                  hint: taskClients.isEmpty
+                      ? const Text(
+                          'No Sale or Retain / Refer clients found',
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : null,
+                  items:
+                      taskClients
+                          .map(
+                            (client) => DropdownMenuItem(
+                              value: client.id,
+                              child: Text(
+                                client.name,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList()
+                        ..insert(
+                          0,
+                          const DropdownMenuItem(
+                            value: _internalPracticeClientId,
+                            child: Text(_internalPracticeLabel),
+                          ),
                         ),
-                      ),
-                onChanged: (clientId) => setState(() {
-                  _clientId = clientId;
-                  _category = null;
-                  _subcategory = null;
-                }),
-              ),
+                  onChanged: (clientId) => setState(() {
+                    _clientId = clientId;
+                  }),
+                ),
               const SizedBox(height: 12),
+              if (widget.salesOnly) ...[
+                InputDecorator(
+                  decoration: const InputDecoration(labelText: 'Current stage'),
+                  child: Text(
+                    widget.clients
+                        .firstWhere((client) => client.id == _clientId)
+                        .stage
+                        .displayName,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(
                 controller: _titleController,
                 decoration: const InputDecoration(labelText: 'Task title'),
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _category,
-                decoration: const InputDecoration(labelText: 'Category'),
-                items: customTaskFeatureCategories
-                    .map(
-                      (category) => DropdownMenuItem(
-                        value: category,
-                        child: Text(category),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (category) => setState(() {
-                  _category = category;
-                  final options = category == null
-                      ? const <String>[]
-                      : planFeatureSubcategories[category] ?? const <String>[];
-                  _subcategory = options.firstOrNull;
-                }),
-              ),
+              if (!widget.salesOnly)
+                DropdownButtonFormField<String>(
+                  initialValue: _category,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Category'),
+                  items: customTaskFeatureCategories
+                      .map(
+                        (category) => DropdownMenuItem(
+                          value: category,
+                          child: Text(category),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (category) => setState(() {
+                    _category = category;
+                    final options = category == null
+                        ? const <String>[]
+                        : planFeatureSubcategories[category] ??
+                              const <String>[];
+                    _subcategory = options.firstOrNull;
+                  }),
+                ),
               if (_category != null &&
-                  (planFeatureSubcategories[_category] ?? const []).isNotEmpty) ...[
+                  (planFeatureSubcategories[_category] ?? const [])
+                      .isNotEmpty) ...[
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   key: ValueKey('create-subcategory-$_category'),
                   initialValue: _subcategory,
-                  decoration: const InputDecoration(labelText: 'Subcategory'),
+                  decoration: InputDecoration(
+                    labelText: _category == salesFeatureCategory
+                        ? 'Action'
+                        : 'Subcategory',
+                  ),
                   items: [
                     for (final subcategory
                         in planFeatureSubcategories[_category]!)
@@ -355,25 +515,42 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
                 ),
               ],
               const SizedBox(height: 12),
-              DropdownButtonFormField<String?>(
-                initialValue: _assignedTo,
-                decoration: const InputDecoration(labelText: 'Assigned staff'),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('Not assigned'),
+              if (widget.selfAssignOnly)
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Assigned staff',
                   ),
-                  for (final user in widget.staff)
-                    DropdownMenuItem<String?>(
-                      value: user.uid,
-                      child: Text(
-                        user.name.isEmpty ? user.email : user.name,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                  child: Text(
+                    currentProfile == null
+                        ? 'Unavailable'
+                        : (currentProfile.name.isEmpty
+                              ? currentProfile.email
+                              : currentProfile.name),
+                  ),
+                )
+              else
+                DropdownButtonFormField<String?>(
+                  key: const ValueKey('create-task-assignee'),
+                  initialValue: _assignedTo,
+                  decoration: const InputDecoration(
+                    labelText: 'Assigned staff',
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Not assigned'),
                     ),
-                ],
-                onChanged: (staffId) => setState(() => _assignedTo = staffId),
-              ),
+                    for (final user in widget.staff)
+                      DropdownMenuItem<String?>(
+                        value: user.uid,
+                        child: Text(
+                          user.name.isEmpty ? user.email : user.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (staffId) => setState(() => _assignedTo = staffId),
+                ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _priority,
@@ -394,14 +571,19 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
                 label: Text(
                   _dueAt == null
                       ? 'Set due date'
-                      : 'Due ${MaterialLocalizations.of(context).formatShortDate(_dueAt!)}',
+                      : 'Due ${MaterialLocalizations.of(context).formatShortDate(_dueAt!)} '
+                            '${TimeOfDay.fromDateTime(_dueAt!).format(context)}',
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _reasonController,
                 maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Instructions'),
+                decoration: InputDecoration(
+                  labelText: _category == salesFeatureCategory
+                      ? 'Notes (optional)'
+                      : 'Instructions',
+                ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 8),
@@ -417,7 +599,7 @@ class _CustomTaskDialogState extends ConsumerState<_CustomTaskDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: _isSaving ? null : _save,
+          onPressed: _isSaving || !selfAssignmentReady ? null : _save,
           child: _isSaving
               ? const SizedBox(
                   width: 20,
@@ -448,7 +630,7 @@ class _TaskOverview extends StatefulWidget {
   State<_TaskOverview> createState() => _TaskOverviewState();
 }
 
-enum _CompletedPeriod { day, week, month, custom }
+enum _CompletedPeriod { all, day, week, month, custom }
 
 class _TaskOverviewState extends State<_TaskOverview> {
   final _searchController = TextEditingController();
@@ -456,12 +638,42 @@ class _TaskOverviewState extends State<_TaskOverview> {
   String? _selectedClientId;
   String? _selectedStaffId;
   String? _selectedCategory;
+  TaskDueFilter? _dueFilter;
+  bool _unassignedOnly = false;
+  Timer? _filterTimer;
   _CompletedPeriod? _completedPeriod;
   DateTimeRange? _customCompletedRange;
   DateTime _completedPeriodAnchor = DateUtils.dateOnly(DateTime.now());
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.completedOnly) _completedPeriod = _CompletedPeriod.all;
+    _filterTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted && !widget.completedOnly) setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _TaskOverview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_selectedClientId != null &&
+        !widget.plans.any(
+          (plan) =>
+              plan.features.isNotEmpty &&
+              _clientFilterKey(plan) == _selectedClientId,
+        )) {
+      _selectedClientId = null;
+    }
+    if (_selectedStaffId != null &&
+        !widget.staff.any((user) => user.uid == _selectedStaffId)) {
+      _selectedStaffId = null;
+    }
+  }
+
+  @override
   void dispose() {
+    _filterTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -471,7 +683,9 @@ class _TaskOverviewState extends State<_TaskOverview> {
     final categories = <String, List<TaskItem>>{};
     for (final plan in widget.plans) {
       for (final rawFeature in plan.features) {
-        final category = parseFeature(rawFeature).category;
+        final category = isSalesTaskFeature(rawFeature)
+            ? salesFeatureCategory
+            : parseFeature(rawFeature).category;
         final units = _contentUnitCount(parseFeature(rawFeature).text);
         if (units == null) {
           categories
@@ -504,21 +718,43 @@ class _TaskOverviewState extends State<_TaskOverview> {
         .where((task) => !task.isWorkflowCompleted)
         .toList();
     final completedItems = visibleItems
-      .where((task) => task.isWorkflowCompleted)
-      .toList();
+        .where((task) => task.isWorkflowCompleted)
+        .toList();
     final displayedItems = widget.completedOnly ? completedItems : activeItems;
+    final now = DateTime.now();
+    final filterItems = activeItems
+        .where(
+          (task) =>
+              _matchesDeliveryFilters(task) &&
+              (_selectedCategory == null ||
+                  (isSalesTaskFeature(task.rawFeature)
+                          ? salesFeatureCategory
+                          : parseFeature(task.rawFeature).category) ==
+                      _selectedCategory),
+        )
+        .toList();
+    String dueLabel(TaskDueFilter filter) => switch (filter) {
+      TaskDueFilter.todayAndOverdue => 'Today & Overdue',
+      TaskDueFilter.upcoming => 'Upcoming',
+      TaskDueFilter.unscheduled => 'Unscheduled',
+    };
     final availableCategories = categories.entries
-      .where(
-        (entry) => entry.value.any(
-        (task) =>
-          !task.isArchived &&
-          task.isWorkflowCompleted == widget.completedOnly,
-        ),
-      )
-      .map((entry) => entry.key)
-      .toList();
+        .where(
+          (entry) => entry.value.any(
+            (task) =>
+                !task.isArchived &&
+                task.isWorkflowCompleted == widget.completedOnly,
+          ),
+        )
+        .map((entry) => entry.key)
+        .toList();
     final clientOptions = <String, String>{
-      for (final task in allItems) task.plan.clientId: _clientName(task.plan),
+      for (final task in allItems)
+        _clientFilterKey(
+          task.plan,
+        ): _clientFilterKey(task.plan) == _unlinkedClientFilter
+            ? 'Unlinked tasks'
+            : _clientName(task.plan),
     };
     final staffOptions = <String, String>{
       for (final user in widget.staff)
@@ -534,6 +770,33 @@ class _TaskOverviewState extends State<_TaskOverview> {
         _TaskSummaryCard(
           title: widget.completedOnly ? 'Completed Tasks' : 'Assign Tasks',
           total: displayedItems.length,
+          trailing: widget.completedOnly
+              ? _buildCompletedPeriodControls(context)
+              : Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    for (final filter in TaskDueFilter.values)
+                      FilterChip(
+                        label: Text(
+                          '${dueLabel(filter)} (${filterItems.where((task) => (!_unassignedOnly || taskAssigneeId(task.plan, task.workflowKey) == null) && matchesTaskDueFilter(task.plan, task.workflowKey, filter, now)).length})',
+                        ),
+                        selected: _dueFilter == filter,
+                        onSelected: (selected) => setState(
+                          () => _dueFilter = selected ? filter : null,
+                        ),
+                      ),
+                    FilterChip(
+                      label: Text(
+                        'Unassigned (${filterItems.where((task) => taskAssigneeId(task.plan, task.workflowKey) == null && (_dueFilter == null || matchesTaskDueFilter(task.plan, task.workflowKey, _dueFilter!, now))).length})',
+                      ),
+                      selected: _unassignedOnly,
+                      onSelected: (selected) =>
+                          setState(() => _unassignedOnly = selected),
+                    ),
+                  ],
+                ),
           counts: {
             if (widget.completedOnly)
               'Completed': completedCount
@@ -603,70 +866,14 @@ class _TaskOverviewState extends State<_TaskOverview> {
                 ],
                 onChanged: (value) => setState(() => _selectedStaffId = value),
               ),
-              if (widget.completedOnly)
-                _TaskFilterDropdown(
-                  label: 'Completed period',
-                  value: _completedPeriod,
-                  items: const [
-                    DropdownMenuItem(
-                      value: _CompletedPeriod.day,
-                      child: Text('Today'),
-                    ),
-                    DropdownMenuItem(
-                      value: _CompletedPeriod.week,
-                      child: Text('This week'),
-                    ),
-                    DropdownMenuItem(
-                      value: _CompletedPeriod.month,
-                      child: Text('This month'),
-                    ),
-                    DropdownMenuItem(
-                      value: _CompletedPeriod.custom,
-                      child: Text('Custom'),
-                    ),
-                  ],
-                  onChanged: _selectCompletedPeriod,
-                ),
-              if (widget.completedOnly && _completedPeriod != null)
-                Container(
-                  height: 48,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: 'Previous period',
-                        icon: const Icon(Icons.chevron_left),
-                        onPressed: () => _moveCompletedPeriod(-1),
-                      ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 90),
-                        child: Text(
-                          _completedPeriodLabel(context),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Next period',
-                        icon: const Icon(Icons.chevron_right),
-                        onPressed: _canMoveToNextCompletedPeriod
-                            ? () => _moveCompletedPeriod(1)
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
               _TaskFilterDropdown(
                 label: 'Task category',
                 value: _selectedCategory,
                 items: [
-                  for (final category in availableCategories)
+                  for (final category in {
+                    ...availableCategories,
+                    if (_selectedCategory != null) _selectedCategory!,
+                  })
                     DropdownMenuItem(value: category, child: Text(category)),
                 ],
                 onChanged: (value) => setState(() => _selectedCategory = value),
@@ -743,12 +950,42 @@ class _TaskOverviewState extends State<_TaskOverview> {
     return count != null && count > 0 ? count : null;
   }
 
+  Widget _buildCompletedPeriodControls(BuildContext context) =>
+      CompletedPeriodControls<_CompletedPeriod>(
+        segments: const [
+          ButtonSegment(
+            value: _CompletedPeriod.all,
+            label: Text(
+              'All days',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          ButtonSegment(value: _CompletedPeriod.day, label: Text('Day')),
+          ButtonSegment(value: _CompletedPeriod.week, label: Text('Week')),
+          ButtonSegment(value: _CompletedPeriod.month, label: Text('Month')),
+          ButtonSegment(value: _CompletedPeriod.custom, label: Text('Custom')),
+        ],
+        selected: _completedPeriod ?? _CompletedPeriod.all,
+        onSelected: _selectCompletedPeriod,
+        dateLabel: _completedPeriodLabel(context),
+        onPrevious: _completedPeriod == _CompletedPeriod.all
+            ? null
+            : () => _moveCompletedPeriod(-1),
+        onNext: _canMoveToNextCompletedPeriod
+            ? () => _moveCompletedPeriod(1)
+            : null,
+        onSelectDates: () => _selectCompletedPeriod(_CompletedPeriod.custom),
+      );
+
   bool get _hasDeliveryFilters =>
       _searchQuery.isNotEmpty ||
       _selectedClientId != null ||
       _selectedStaffId != null ||
       _selectedCategory != null ||
-      _completedPeriod != null;
+      _dueFilter != null ||
+      _unassignedOnly ||
+      (widget.completedOnly && _completedPeriod != _CompletedPeriod.all);
 
   void _clearDeliveryFilters() {
     setState(() {
@@ -757,7 +994,9 @@ class _TaskOverviewState extends State<_TaskOverview> {
       _selectedClientId = null;
       _selectedStaffId = null;
       _selectedCategory = null;
-      _completedPeriod = null;
+      _dueFilter = null;
+      _unassignedOnly = false;
+      _completedPeriod = widget.completedOnly ? _CompletedPeriod.all : null;
       _customCompletedRange = null;
       _completedPeriodAnchor = DateUtils.dateOnly(DateTime.now());
     });
@@ -781,6 +1020,20 @@ class _TaskOverviewState extends State<_TaskOverview> {
       firstDate: DateTime(2020),
       lastDate: today,
       helpText: 'Select completed date range',
+      builder: (context, child) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            key: const ValueKey('completed-date-popup'),
+            width: 480,
+            height: 600,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: child!,
+            ),
+          ),
+        ),
+      ),
     );
     if (selectedRange == null || !mounted) return;
     setState(() {
@@ -793,6 +1046,7 @@ class _TaskOverviewState extends State<_TaskOverview> {
     final period = _completedPeriod;
     if (period == null) return null;
     return switch (period) {
+      _CompletedPeriod.all => null,
       _CompletedPeriod.day => DateTimeRange(
         start: _completedPeriodAnchor,
         end: _completedPeriodAnchor,
@@ -824,9 +1078,9 @@ class _TaskOverviewState extends State<_TaskOverview> {
   bool get _canMoveToNextCompletedPeriod {
     final range = _completedDateRange;
     if (range == null) return false;
-    return DateUtils.dateOnly(range.end).isBefore(
-      DateUtils.dateOnly(DateTime.now()),
-    );
+    return DateUtils.dateOnly(
+      range.end,
+    ).isBefore(DateUtils.dateOnly(DateTime.now()));
   }
 
   void _moveCompletedPeriod(int direction) {
@@ -834,6 +1088,8 @@ class _TaskOverviewState extends State<_TaskOverview> {
     if (period == null) return;
     setState(() {
       switch (period) {
+        case _CompletedPeriod.all:
+          return;
         case _CompletedPeriod.day:
           _completedPeriodAnchor = _completedPeriodAnchor.add(
             Duration(days: direction),
@@ -865,8 +1121,13 @@ class _TaskOverviewState extends State<_TaskOverview> {
 
   String _completedPeriodLabel(BuildContext context) {
     final range = _completedDateRange;
-    if (range == null) return '';
+    if (range == null) return 'All days';
     final localizations = MaterialLocalizations.of(context);
+    if (_completedPeriod == _CompletedPeriod.week) {
+      final start = localizations.formatShortMonthDay(range.start);
+      final end = localizations.formatShortMonthDay(range.end);
+      return '$start - $end';
+    }
     if (_completedPeriod == _CompletedPeriod.month) {
       return localizations.formatMonthYear(range.start);
     }
@@ -877,7 +1138,20 @@ class _TaskOverviewState extends State<_TaskOverview> {
 
   bool _matchesTaskStatusFilters(TaskItem task) {
     if (task.isWorkflowCompleted != widget.completedOnly) return false;
-    if (!widget.completedOnly || _completedPeriod == null) {
+    if (!widget.completedOnly) {
+      if (_unassignedOnly &&
+          taskAssigneeId(task.plan, task.workflowKey) != null) {
+        return false;
+      }
+      return _dueFilter == null ||
+          matchesTaskDueFilter(
+            task.plan,
+            task.workflowKey,
+            _dueFilter!,
+            DateTime.now(),
+          );
+    }
+    if (_completedPeriod == null || _completedPeriod == _CompletedPeriod.all) {
       return true;
     }
 
@@ -892,7 +1166,8 @@ class _TaskOverviewState extends State<_TaskOverview> {
   }
 
   bool _matchesDeliveryFilters(TaskItem task) {
-    if (_selectedClientId != null && task.plan.clientId != _selectedClientId) {
+    if (_selectedClientId != null &&
+        _clientFilterKey(task.plan) != _selectedClientId) {
       return false;
     }
     if (_selectedStaffId != null &&
@@ -914,7 +1189,13 @@ class _TaskOverviewState extends State<_TaskOverview> {
 
   String _clientName(Plan plan) => plan.clientId == _internalPracticeClientId
       ? _internalPracticeLabel
-      : widget.clientNames[plan.clientId] ?? 'Unknown client';
+      : widget.clientNames[plan.clientId] ?? 'No client linked';
+
+  String _clientFilterKey(Plan plan) =>
+      plan.clientId == _internalPracticeClientId ||
+          widget.clientNames.containsKey(plan.clientId)
+      ? plan.clientId
+      : _unlinkedClientFilter;
 }
 
 class _TaskFilterDropdown<T> extends StatelessWidget {
@@ -934,6 +1215,7 @@ class _TaskFilterDropdown<T> extends StatelessWidget {
   Widget build(BuildContext context) => SizedBox(
     width: 210,
     child: DropdownButtonFormField<T>(
+      key: ValueKey((label, value)),
       initialValue: value,
       isExpanded: true,
       decoration: InputDecoration(labelText: label),
@@ -946,38 +1228,177 @@ class _TaskFilterDropdown<T> extends StatelessWidget {
   );
 }
 
+class CompletedPeriodControls<Period> extends StatelessWidget {
+  final List<ButtonSegment<Period>> segments;
+  final Period selected;
+  final ValueChanged<Period> onSelected;
+  final String dateLabel;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+  final VoidCallback onSelectDates;
+
+  const CompletedPeriodControls({
+    super.key,
+    required this.segments,
+    required this.selected,
+    required this.onSelected,
+    required this.dateLabel,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onSelectDates,
+  });
+
+  static const _iconStyle = ButtonStyle(
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    padding: WidgetStatePropertyAll(EdgeInsets.zero),
+    minimumSize: WidgetStatePropertyAll(Size(24, 24)),
+    maximumSize: WidgetStatePropertyAll(Size(24, 24)),
+  );
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    key: const ValueKey('completed-period-controls'),
+    width: 650,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: 24,
+          child: Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<Period>(
+                  key: const ValueKey('completed-period-selector'),
+                  showSelectedIcon: false,
+                  expandedInsets: EdgeInsets.zero,
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize: const WidgetStatePropertyAll(Size(0, 24)),
+                    maximumSize: const WidgetStatePropertyAll(
+                      Size(double.infinity, 24),
+                    ),
+                    padding: const WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                    foregroundColor: WidgetStatePropertyAll(
+                      Theme.of(context).colorScheme.onSurface,
+                    ),
+                    backgroundColor: WidgetStateProperty.resolveWith(
+                      (states) => states.contains(WidgetState.selected)
+                          ? Theme.of(context).chipTheme.selectedColor ??
+                                Theme.of(context).colorScheme.secondaryContainer
+                          : Colors.transparent,
+                    ),
+                  ),
+                  segments: segments,
+                  selected: {selected},
+                  onSelectionChanged: (selection) =>
+                      onSelected(selection.single),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Select dates',
+                iconSize: 20,
+                style: _iconStyle,
+                icon: const Icon(Icons.calendar_month_outlined),
+                onPressed: onSelectDates,
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          key: const ValueKey('completed-period-navigation'),
+          height: 24,
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Previous period',
+                iconSize: 20,
+                style: _iconStyle,
+                icon: const Icon(Icons.chevron_left),
+                onPressed: onPrevious,
+              ),
+              Expanded(
+                child: Text(
+                  dateLabel,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Next period',
+                iconSize: 20,
+                style: _iconStyle,
+                icon: const Icon(Icons.chevron_right),
+                onPressed: onNext,
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _TaskSummaryCard extends StatelessWidget {
   final String title;
   final int total;
   final Map<String, int> counts;
+  final Widget? trailing;
 
   const _TaskSummaryCard({
     required this.title,
     required this.total,
     required this.counts,
+    this.trailing,
   });
 
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('$title  $total', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final summary = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final entry in counts.entries)
-                Text(
-                  '${entry.key}: ${entry.value}',
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
+              Text(
+                '$title  $total',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                children: [
+                  for (final entry in counts.entries)
+                    Text(
+                      '${entry.key}: ${entry.value}',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                ],
+              ),
             ],
-          ),
-        ],
+          );
+          if (trailing == null) return summary;
+          if (constraints.maxWidth >= 1000) {
+            return Row(
+              children: [
+                Expanded(child: summary),
+                const SizedBox(width: 16),
+                Flexible(child: trailing!),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [summary, const SizedBox(height: 12), trailing!],
+          );
+        },
       ),
     ),
   );
@@ -1001,6 +1422,12 @@ class TaskRow extends ConsumerWidget {
     WidgetRef ref,
     List<AppUser> staff,
   ) async {
+    if (isSalesTaskFeature(task.workflowKey) &&
+        lockedAssigneeId != null &&
+        clientName != 'No client linked') {
+      await _openSalesRecord(context, ref);
+      return;
+    }
     await showDialog<void>(
       context: context,
       builder: (_) => TaskWorkflowDialog(
@@ -1013,26 +1440,67 @@ class TaskRow extends ConsumerWidget {
     );
   }
 
+  Future<void> _openSalesRecord(BuildContext context, WidgetRef ref) async {
+    if (clientName == 'No client linked') {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => TaskWorkflowDialog(
+          task: task,
+          clientName: clientName,
+          ref: ref,
+          staff: ref.read(allUsersProvider).valueOrNull ?? [],
+          lockedAssigneeId: lockedAssigneeId,
+        ),
+      );
+      return;
+    }
+    try {
+      final customer =
+          ref
+              .read(clientsListProvider)
+              .valueOrNull
+              ?.where((client) => client.id == task.plan.clientId)
+              .firstOrNull ??
+          await ref.read(clientProvider(task.plan.clientId).future);
+      if (customer == null) throw StateError('Customer not found.');
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => SalesRecordDialog(
+          client: customer,
+          plans: ref.read(visiblePlansProvider).valueOrNull ?? [task.plan],
+          initialTask: (plan: task.plan, feature: task.workflowKey),
+          allowDeletion: lockedAssigneeId == null,
+          customerRecord: true,
+        ),
+      );
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open sales record: $error')),
+        );
+      }
+    }
+  }
+
   Future<void> _setArchived(
     BuildContext context,
     WidgetRef ref,
     bool isArchived,
   ) async {
     try {
-      await ref
-          .read(firestoreServiceProvider)
-          .updatePlan(setTaskArchived(task.plan, task.workflowKey, isArchived));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isArchived
-                  ? '${task.displayText} archived'
-                  : '${task.displayText} restored',
-            ),
-          ),
-        );
-      }
+      final updated = setTaskArchived(task.plan, task.workflowKey, isArchived);
+      final service = ref.read(firestoreServiceProvider);
+      ref
+          .read(taskSavesProvider.notifier)
+          .submit(
+            desired: updated,
+            previous: task.plan,
+            label: task.displayText,
+            workflowKey: task.workflowKey,
+            lockedAssigneeId: lockedAssigneeId,
+            persist: () => service.updatePlan(updated, previous: task.plan),
+          );
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1048,10 +1516,22 @@ class TaskRow extends ConsumerWidget {
     bool isRunning,
   ) async {
     try {
-      await ref
-          .read(firestoreServiceProvider)
-          .updatePlan(
-            setTaskTimerRunning(task.plan, task.workflowKey, isRunning),
+      final updated = setTaskTimerRunning(
+        task.plan,
+        task.workflowKey,
+        isRunning,
+        actor: ref.read(currentUserProfileProvider).valueOrNull,
+      );
+      final service = ref.read(firestoreServiceProvider);
+      ref
+          .read(taskSavesProvider.notifier)
+          .submit(
+            desired: updated,
+            previous: task.plan,
+            label: task.displayText,
+            workflowKey: task.workflowKey,
+            lockedAssigneeId: lockedAssigneeId,
+            persist: () => service.updatePlan(updated, previous: task.plan),
           );
     } catch (error) {
       if (context.mounted) {
@@ -1065,8 +1545,18 @@ class TaskRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = task.displayText;
+    final pendingSave = ref.watch(taskSavesProvider)[task.plan.id];
+    final saveBlocked =
+        pendingSave != null && pendingSave.phase != TaskSavePhase.confirmed;
     final staff = ref.watch(allUsersProvider).valueOrNull ?? const <AppUser>[];
     final activeCycle = currentTaskCycle(task.plan, task.workflowKey);
+    final pendingReviewer =
+        task.status == TaskStatus.draftCycle &&
+            draftCycleStage(task.plan, task.workflowKey) ==
+                DraftCycleStage.confirmation &&
+            activeCycle['clientConfirmed'] != true
+        ? activeCycle['reviewRequestedFrom']?.toString()
+        : null;
     final cycleNumber = (activeCycle['cycle'] as num?)?.toInt();
     final assignee = taskAssigneeName(task.plan, task.workflowKey);
     final priority = taskPriority(task.plan, task.workflowKey);
@@ -1075,10 +1565,10 @@ class TaskRow extends ConsumerWidget {
     final timerRunning = taskTimerIsRunning(task.plan, task.workflowKey);
     final dueAt = taskDueAt(task.plan, task.workflowKey);
     final dueState = _deliveryDueState(dueAt);
+    final dates = taskCardDates(context, task.plan, task.workflowKey);
     final statusLabel = [
       if (assignee != null) assignee,
       if (cycleNumber != null) 'Draft $cycleNumber',
-      timerRunning ? 'Working' : task.status.label,
       if (task.status == TaskStatus.draftCycle)
         draftCycleStage(task.plan, task.workflowKey).label,
     ].join(' • ');
@@ -1102,6 +1592,10 @@ class TaskRow extends ConsumerWidget {
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (pendingSave?.phase == TaskSavePhase.saving)
+                const Chip(label: Text('Saving...')),
+              if (pendingSave?.phase == TaskSavePhase.failed)
+                const Chip(label: Text('Save failed - retry above')),
               Text(text, maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 8),
               Wrap(
@@ -1123,6 +1617,41 @@ class TaskRow extends ConsumerWidget {
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
                   ),
+                  if (pendingReviewer == 'admin' || pendingReviewer == 'client')
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade100,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Colors.amber.shade700),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.pending_actions,
+                            size: 16,
+                            color: Colors.brown.shade800,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              pendingReviewer == 'admin'
+                                  ? 'Waiting for admin approval'
+                                  : 'Waiting for client approval',
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    color: Colors.brown.shade800,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (elapsed != null) ...[
                     _TaskTimerBadge(
                       initialElapsed: timerRunning
@@ -1134,6 +1663,27 @@ class TaskRow extends ConsumerWidget {
                       runningSince: timerRunning ? startedAt : null,
                     ),
                   ],
+                  if (pendingReviewer != 'admin' && pendingReviewer != 'client')
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: task.isWorkflowCompleted
+                            ? Colors.green.shade100
+                            : Colors.white.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        timerRunning && !task.isWorkflowCompleted
+                            ? 'Working'
+                            : task.status.label,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                   if (showStatus) ...[
                     if (dueState != null) ...[_DueStateBadge(state: dueState)],
                     Container(
@@ -1153,25 +1703,26 @@ class TaskRow extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.65),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 220),
-                        child: Text(
-                          statusLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelLarge,
+                    if (statusLabel.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 220),
+                          child: Text(
+                            statusLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ],
               ),
@@ -1179,11 +1730,19 @@ class TaskRow extends ConsumerWidget {
           ),
           subtitle: Text(
             '$category • Client: $clientName'
-            '${dueAt == null ? '' : ' • ${MaterialLocalizations.of(context).formatShortDate(dueAt)}'}',
+            '${dates.isEmpty ? '' : ' • $dates'}',
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (isSalesTaskFeature(task.workflowKey))
+                IconButton(
+                  tooltip: 'Sales record',
+                  icon: const Icon(Icons.fact_check_outlined),
+                  onPressed: saveBlocked
+                      ? null
+                      : () => _openSalesRecord(context, ref),
+                ),
               if (!task.isWorkflowCompleted && !task.isArchived)
                 IconButton(
                   tooltip: timerRunning
@@ -1196,8 +1755,9 @@ class TaskRow extends ConsumerWidget {
                         ? Icons.stop_circle_outlined
                         : Icons.play_circle_outline,
                   ),
-                  onPressed: () =>
-                      _setTimerRunning(context, ref, !timerRunning),
+                  onPressed: saveBlocked
+                      ? null
+                      : () => _setTimerRunning(context, ref, !timerRunning),
                 ),
               IconButton(
                 tooltip: task.isArchived ? 'Restore task' : 'Archive task',
@@ -1206,12 +1766,14 @@ class TaskRow extends ConsumerWidget {
                       ? Icons.unarchive_outlined
                       : Icons.archive_outlined,
                 ),
-                onPressed: () => _setArchived(context, ref, !task.isArchived),
+                onPressed: saveBlocked
+                    ? null
+                    : () => _setArchived(context, ref, !task.isArchived),
               ),
               const Icon(Icons.edit_note_outlined),
             ],
           ),
-          onTap: () => _openWorkflow(context, ref, staff),
+          onTap: saveBlocked ? null : () => _openWorkflow(context, ref, staff),
         ),
       ),
     );
@@ -1457,9 +2019,9 @@ extension _TaskStatusLabels on TaskStatus {
   String get label => switch (this) {
     TaskStatus.notAssigned => 'Not assigned',
     TaskStatus.assigned => 'Assigned',
-    TaskStatus.started => 'Start',
+    TaskStatus.started => 'Started',
     TaskStatus.draftCycle => 'Draft cycle',
-    TaskStatus.completed => 'Complete',
+    TaskStatus.completed => 'Completed',
   };
 }
 
@@ -1485,13 +2047,16 @@ String priorityLabel(String priority) => switch (priority) {
   _ => (const Color(0xFFDCEBFF), const Color(0xFF174A8B)),
 };
 
-class TaskWorkflowDialog extends StatefulWidget {
+class TaskWorkflowDialog extends ConsumerStatefulWidget {
   final TaskItem task;
   final String clientName;
   final WidgetRef ref;
   final List<AppUser> staff;
   final String? lockedAssigneeId;
   final String? lockedAssigneeName;
+  final bool allowCompletion;
+  final Map<String, String> retainedEdits;
+  final bool replaceFailedSave;
 
   const TaskWorkflowDialog({
     required this.task,
@@ -1500,13 +2065,16 @@ class TaskWorkflowDialog extends StatefulWidget {
     required this.staff,
     this.lockedAssigneeId,
     this.lockedAssigneeName,
+    this.allowCompletion = true,
+    this.retainedEdits = const {},
+    this.replaceFailedSave = false,
   });
 
   @override
-  State<TaskWorkflowDialog> createState() => _TaskWorkflowDialogState();
+  ConsumerState<TaskWorkflowDialog> createState() => _TaskWorkflowDialogState();
 }
 
-class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
+class _TaskWorkflowDialogState extends ConsumerState<TaskWorkflowDialog> {
   late TaskStatus _status;
   late DraftCycleStage _draftStage;
   late List<Map<String, dynamic>> _drafts;
@@ -1520,37 +2088,46 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
   String? _error;
   bool _saving = false;
 
-  bool get _awaitingAdminReview =>
-      _status == TaskStatus.draftCycle &&
-      _draftStage == DraftCycleStage.confirmation &&
-      (_drafts.isEmpty
-          ? false
-          : _drafts.last['reviewRequestedFrom']?.toString() == 'admin');
+  bool get _readOnly => widget.task.status == TaskStatus.completed;
 
-  Future<void> _resolveAdminReview(String decision) async {
-    Plan updated = widget.task.plan;
-    if (decision == 'changes') {
-      updated = createNextDraftCycle(updated, widget.task.workflowKey);
-    } else if (decision == 'client') {
-      updated = submitTaskForReview(
-        updated,
-        widget.task.workflowKey,
-        reviewer: 'client',
-      );
-    } else {
-      updated = completeReviewedTask(updated, widget.task.workflowKey);
-    }
-    try {
-      await widget.ref.read(firestoreServiceProvider).updatePlan(updated);
-      if (mounted) Navigator.of(context).pop();
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not resolve review: $error')),
+  bool get _canComplete =>
+      widget.allowCompletion &&
+      widget.lockedAssigneeId == null &&
+      (ref
+              .read(currentUserProfileProvider)
+              .valueOrNull
+              ?.canAccessPanel('tasks') ??
+          false);
+
+  Map<String, dynamic>? get _currentDraft => _drafts.isEmpty
+      ? null
+      : _drafts.reduce(
+          (left, right) =>
+              ((left['cycle'] as num?)?.toInt() ?? 0) >
+                  ((right['cycle'] as num?)?.toInt() ?? 0)
+              ? left
+              : right,
         );
-      }
+
+  String? get _pendingReviewer {
+    final draft = _currentDraft;
+    if (_status != TaskStatus.draftCycle ||
+        _draftStage != DraftCycleStage.confirmation ||
+        draft == null ||
+        draft['clientConfirmed'] == true) {
+      return null;
     }
+    return draft['reviewRequestedFrom']?.toString();
   }
+
+  bool get _canSubmitForAdminReview =>
+      _canComplete ||
+      ((ref
+                  .read(currentUserProfileProvider)
+                  .valueOrNull
+                  ?.canAccessPanel('myTasks') ??
+              false) &&
+          ref.read(currentStaffIdsProvider).contains(_assignedTo));
 
   void _syncDraftStatuses() {
     for (var index = 0; index < _drafts.length; index++) {
@@ -1647,12 +2224,13 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
     final parsedFeature = parseFeature(widget.task.rawFeature);
     final categorySelection = parseFeatureCategory(parsedFeature.category);
     _category = customTaskFeatureCategories.contains(categorySelection.category)
-      ? categorySelection.category
-      : customTaskFeatureCategories.first;
-    final subcategories = planFeatureSubcategories[_category] ?? const <String>[];
+        ? categorySelection.category
+        : customTaskFeatureCategories.first;
+    final subcategories =
+        planFeatureSubcategories[_category] ?? const <String>[];
     _subcategory = subcategories.contains(categorySelection.subcategory)
-      ? categorySelection.subcategory
-      : subcategories.firstOrNull;
+        ? categorySelection.subcategory
+        : subcategories.firstOrNull;
     _titleController = TextEditingController(text: parsedFeature.text);
     _drafts = taskCycles(widget.task.plan, widget.task.workflowKey)
         .where((draft) => (draft['cycle'] as num?) != null)
@@ -1693,7 +2271,37 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
     if (picked != null) setState(() => _dueAt = picked);
   }
 
-  Future<void> _save() async {
+  Future<void> _save({String? reviewAction}) async {
+    if (_saving) return;
+    if (reviewAction != null &&
+        (reviewAction == 'admin' ? !_canSubmitForAdminReview : !_canComplete)) {
+      setState(() => _error = 'You do not have access to this review action.');
+      return;
+    }
+    if (reviewAction != null &&
+        reviewAction != 'restore' &&
+        _assignedTo == null) {
+      setState(() => _error = 'Assign the task before requesting approval.');
+      return;
+    }
+    if (reviewAction == 'restore' &&
+        (widget.task.status != TaskStatus.completed ||
+            _status != TaskStatus.completed)) {
+      setState(() => _error = 'Only completed tasks can be restored.');
+      return;
+    }
+    if (reviewAction == 'complete' && _pendingReviewer != 'client') {
+      setState(
+        () => _error = 'Send to the client for approval before completing.',
+      );
+      return;
+    }
+    if (_status == TaskStatus.completed &&
+        widget.task.status != TaskStatus.completed &&
+        !_canComplete) {
+      setState(() => _error = 'Complete tasks from the Assign Tasks panel.');
+      return;
+    }
     final title = _titleController.text.trim();
     if (title.isEmpty) {
       setState(() => _error = 'Task title is required.');
@@ -1711,6 +2319,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
       _syncCurrentDraftStage();
     }
     if (_status == TaskStatus.completed &&
+        reviewAction != 'restore' &&
         _drafts.isNotEmpty &&
         !_currentDraftConfirmed) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1730,11 +2339,17 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
     );
     final workflowKey = taskKey(newFeature, widget.task.unitIndex);
     final cyclesUpdated = _drafts.isEmpty
-        ? setTaskStatus(renamedPlan, workflowKey, _status)
+        ? setTaskStatus(
+            renamedPlan,
+            workflowKey,
+            _status,
+            actor: ref.read(currentUserProfileProvider).valueOrNull,
+          )
         : replaceTaskWorkflowCycles(
             renamedPlan,
             workflowKey,
             _drafts,
+            actor: ref.read(currentUserProfileProvider).valueOrNull,
           );
     final assignedUser = widget.staff
         .where((user) => user.uid == _assignedTo)
@@ -1747,21 +2362,64 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
           : (widget.lockedAssigneeId ?? assignedUser?.uid),
       assignedToName: assignedUser == null
           ? (_status == TaskStatus.notAssigned
-        ? null
-        : widget.lockedAssigneeName)
+                ? null
+                : widget.lockedAssigneeName ??
+                      taskAssigneeName(
+                        widget.task.plan,
+                        widget.task.workflowKey,
+                      ))
           : (assignedUser.name.isEmpty
                 ? assignedUser.email
                 : assignedUser.name),
       priority: _priority,
+      actor: ref.read(currentUserProfileProvider).valueOrNull,
     );
-    final updated = updateTaskManagementDetails(
+    var updated = updateTaskManagementDetails(
       assigned,
       workflowKey,
       dueAt: _dueAt,
       internalNotes: _internalNotesController.text,
+      actor: ref.read(currentUserProfileProvider).valueOrNull,
     );
     try {
-      await widget.ref.read(firestoreServiceProvider).updatePlan(updated);
+      updated = switch (reviewAction) {
+        'admin' || 'client' => submitTaskForReview(
+          updated,
+          workflowKey,
+          reviewer: reviewAction!,
+          actor: ref.read(currentUserProfileProvider).valueOrNull,
+        ),
+        'changes' => createNextDraftCycle(
+          updated,
+          workflowKey,
+          actor: ref.read(currentUserProfileProvider).valueOrNull,
+        ),
+        'complete' => completeReviewedTask(
+          updated,
+          workflowKey,
+          actor: ref.read(currentUserProfileProvider).valueOrNull,
+        ),
+        'restore' => restoreCompletedTask(
+          widget.task.plan,
+          widget.task.workflowKey,
+        ),
+        null => updated,
+        _ => throw ArgumentError.value(reviewAction, 'reviewAction'),
+      };
+      final service = widget.ref.read(firestoreServiceProvider);
+      final submitted = updated;
+      final previous = widget.task.plan;
+      ref
+          .read(taskSavesProvider.notifier)
+          .submit(
+            desired: submitted,
+            previous: previous,
+            label: title,
+            workflowKey: widget.task.workflowKey,
+            lockedAssigneeId: widget.lockedAssigneeId,
+            replaceFailed: widget.replaceFailedSave,
+            persist: () => service.updatePlan(submitted, previous: previous),
+          );
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
       if (mounted) {
@@ -1774,6 +2432,18 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
   }
 
   Future<void> _complete() async {
+    if (!_canComplete) return;
+    if (_drafts.isNotEmpty) {
+      setState(
+        () =>
+            _error = 'Send this draft through admin and client approval first.',
+      );
+      return;
+    }
+    if (_pendingReviewer == 'admin' || _pendingReviewer == 'client') {
+      setState(() => _error = 'Record client approval before completing.');
+      return;
+    }
     setState(() {
       _status = TaskStatus.completed;
       _confirmCurrentDraft();
@@ -1781,8 +2451,69 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
     await _save();
   }
 
+  Future<void> _restore() async {
+    final confirmation = TextEditingController();
+    final route = DialogRoute<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restore completed task?'),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Return this task to its previous stage and remove its '
+                  'completion confirmation. Drafts, notes, assignment, and '
+                  'progress are kept. The work timer stays paused.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: confirmation,
+                  autofocus: true,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Type RESTORE to confirm',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: confirmation,
+            builder: (context, value, child) => FilledButton(
+              onPressed: value.text == 'RESTORE'
+                  ? () => Navigator.of(context).pop(true)
+                  : null,
+              child: const Text('Restore task'),
+            ),
+          ),
+        ],
+      ),
+    );
+    try {
+      final confirmed = await Navigator.of(context).push(route);
+      await route.completed;
+      if (confirmed == true && mounted) await _save(reviewAction: 'restore');
+    } finally {
+      confirmation.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final profile = ref.watch(currentUserProfileProvider).valueOrNull;
+    if (!_canComplete && (profile?.canAccessPanel('myTasks') ?? false)) {
+      ref.watch(currentStaffIdsProvider);
+    }
     final orderedDrafts = [..._drafts]
       ..sort((a, b) {
         final aNumber = (a['cycle'] as num?)?.toInt() ?? 0;
@@ -1790,7 +2521,32 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
         return bNumber.compareTo(aNumber);
       });
     return AlertDialog(
-      title: const Text('Task Details'),
+      title: Row(
+        children: [
+          const Expanded(child: Text('Task Details')),
+          if (profile?.isAdmin == true && widget.lockedAssigneeId == null)
+            IconButton(
+              tooltip: 'Delete task',
+              icon: Icon(
+                Icons.delete_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              onPressed: _saving
+                  ? null
+                  : () async {
+                      final deleted = await confirmTaskDeletion(
+                        context,
+                        ref,
+                        planId: widget.task.plan.id,
+                        feature: widget.task.rawFeature,
+                      );
+                      if (deleted && context.mounted) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+            ),
+        ],
+      ),
       content: SizedBox(
         width: 760,
         child: SingleChildScrollView(
@@ -1798,8 +2554,10 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              RetainedTaskEdits(edits: widget.retainedEdits),
               TextField(
                 controller: _titleController,
+                readOnly: _readOnly,
                 decoration: const InputDecoration(labelText: 'Task title'),
               ),
               const SizedBox(height: 12),
@@ -1813,22 +2571,27 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                       child: Text(category, overflow: TextOverflow.ellipsis),
                     ),
                 ],
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _category = value;
-                      final options =
-                          planFeatureSubcategories[value] ?? const <String>[];
-                      _subcategory = options.firstOrNull;
-                    });
-                  }
-                },
+                onChanged: _readOnly
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          setState(() {
+                            _category = value;
+                            final options =
+                                planFeatureSubcategories[value] ??
+                                const <String>[];
+                            _subcategory = options.firstOrNull;
+                          });
+                        }
+                      },
               ),
-                if ((planFeatureSubcategories[_category] ?? const []).isNotEmpty) ...[
+              if ((planFeatureSubcategories[_category] ?? const [])
+                  .isNotEmpty) ...[
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   key: ValueKey('edit-subcategory-$_category'),
                   initialValue: _subcategory,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Subcategory'),
                   items: [
                     for (final subcategory
@@ -1838,8 +2601,10 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                         child: Text(subcategory),
                       ),
                   ],
-                  onChanged: (subcategory) =>
-                      setState(() => _subcategory = subcategory),
+                  onChanged: _readOnly
+                      ? null
+                      : (subcategory) =>
+                            setState(() => _subcategory = subcategory),
                 ),
               ],
               const SizedBox(height: 8),
@@ -1849,6 +2614,9 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade700),
               ),
+              if (widget.lockedAssigneeId == null &&
+                  widget.clientName == 'No client linked')
+                UnlinkedPlanRepair(plan: widget.task.plan),
               const SizedBox(height: 16),
               Wrap(
                 spacing: 12,
@@ -1858,6 +2626,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                     width: 360,
                     child: DropdownButtonFormField<String?>(
                       initialValue: _assignedTo,
+                      isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'Assigned staff',
                       ),
@@ -1882,7 +2651,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                             ),
                         ],
                       ],
-                      onChanged: widget.lockedAssigneeId == null
+                      onChanged: !_readOnly && widget.lockedAssigneeId == null
                           ? (value) {
                               setState(() {
                                 _assignedTo = value;
@@ -1901,6 +2670,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                     width: 220,
                     child: DropdownButtonFormField<String>(
                       initialValue: _priority,
+                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Priority'),
                       items: const [
                         DropdownMenuItem(value: 'low', child: Text('Low')),
@@ -1914,35 +2684,13 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                           child: Text('Urgent'),
                         ),
                       ],
-                      onChanged: (value) {
-                        if (value != null) setState(() => _priority = value);
-                      },
-                    ),
-                  ),
-                  SizedBox(
-                    width: 220,
-                    child: DropdownButtonFormField<TaskStatus>(
-                      initialValue: _status,
-                      decoration: const InputDecoration(labelText: 'Status'),
-                      items: [
-                        for (final status in TaskStatus.values)
-                          if (widget.lockedAssigneeId == null ||
-                              status != TaskStatus.notAssigned)
-                            DropdownMenuItem(
-                              value: status,
-                              child: Text(status.label),
-                            ),
-                      ],
-                      onChanged: (status) {
-                        if (status == null) return;
-                        setState(() {
-                          _status = status;
-                          if (status == TaskStatus.notAssigned) {
-                            _assignedTo = null;
-                          }
-                          _syncDraftStatuses();
-                        });
-                      },
+                      onChanged: _readOnly
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() => _priority = value);
+                              }
+                            },
                     ),
                   ),
                 ],
@@ -1954,12 +2702,17 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ],
-              if (_awaitingAdminReview) ...[
+              if (_pendingReviewer == 'admin' ||
+                  _pendingReviewer == 'client') ...[
                 const SizedBox(height: 10),
                 Text(
-                  'Awaiting admin review',
+                  _pendingReviewer == 'admin'
+                      ? 'Waiting for admin approval'
+                      : 'Waiting for client approval',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
+              ],
+              if (_canComplete && _pendingReviewer == 'admin') ...[
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -1968,30 +2721,20 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                     OutlinedButton.icon(
                       onPressed: _saving
                           ? null
-                          : () => _resolveAdminReview('changes'),
+                          : () => _save(reviewAction: 'changes'),
                       icon: const Icon(Icons.reply_outlined),
                       label: const Text('Request changes'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _saving
-                          ? null
-                          : () => _resolveAdminReview('client'),
-                      icon: const Icon(Icons.send_outlined),
-                      label: const Text('Send to client approval'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: _saving
-                          ? null
-                          : () => _resolveAdminReview('complete'),
-                      icon: const Icon(Icons.verified_outlined),
-                      label: const Text('Approve and complete'),
                     ),
                   ],
                 ),
               ],
               const SizedBox(height: 12),
+              TaskTrackingSection(
+                plan: widget.task.plan,
+                workflowKey: widget.task.workflowKey,
+              ),
               OutlinedButton.icon(
-                onPressed: _pickDueDate,
+                onPressed: _readOnly ? null : _pickDueDate,
                 icon: const Icon(Icons.event_outlined),
                 label: Text(
                   _dueAt == null
@@ -1999,7 +2742,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                       : 'Due ${MaterialLocalizations.of(context).formatShortDate(_dueAt!)}',
                 ),
               ),
-              if (_dueAt != null)
+              if (!_readOnly && _dueAt != null)
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
@@ -2010,6 +2753,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                 ),
               TextField(
                 controller: _internalNotesController,
+                readOnly: _readOnly,
                 maxLines: 3,
                 decoration: const InputDecoration(
                   labelText: 'Internal project notes',
@@ -2018,35 +2762,51 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Text('Drafts', style: Theme.of(context).textTheme.titleSmall),
-                  const Spacer(),
-                  OutlinedButton.icon(
-                    onPressed: _assignedTo == null
-                        ? null
-                        : () {
-                            setState(() {
-                              final nextCycle = orderedDrafts.isEmpty
-                                  ? 1
-                                  : ((orderedDrafts.first['cycle'] as num?)
-                                                ?.toInt() ??
-                                            0) +
-                                        1;
-                              _drafts.insert(0, {
-                                'cycle': nextCycle,
-                                'status': TaskStatus.draftCycle.name,
-                                'draftStage': DraftCycleStage.instructions.name,
-                                'instructions': '',
-                                'update': '',
-                                'clientConfirmed': false,
-                              });
-                              _status = TaskStatus.draftCycle;
-                              _draftStage = DraftCycleStage.instructions;
-                              _syncDraftStatuses();
-                            });
-                          },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('New draft'),
+                  Expanded(
+                    child: Text(
+                      'Drafts',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
                   ),
+                  if (!_readOnly)
+                    OutlinedButton.icon(
+                      onPressed: _assignedTo == null
+                          ? null
+                          : () {
+                              setState(() {
+                                final nextCycle = orderedDrafts.isEmpty
+                                    ? 1
+                                    : ((orderedDrafts.first['cycle'] as num?)
+                                                  ?.toInt() ??
+                                              0) +
+                                          1;
+                                _drafts.insert(0, {
+                                  'cycle': nextCycle,
+                                  'createdAt': DateTime.now()
+                                      .toUtc()
+                                      .toIso8601String(),
+                                  if (profile != null)
+                                    'createdBy': {
+                                      'uid': profile.uid,
+                                      'name': profile.name.isEmpty
+                                          ? profile.email
+                                          : profile.name,
+                                    },
+                                  'status': TaskStatus.draftCycle.name,
+                                  'draftStage':
+                                      DraftCycleStage.instructions.name,
+                                  'instructions': '',
+                                  'update': '',
+                                  'clientConfirmed': false,
+                                });
+                                _status = TaskStatus.draftCycle;
+                                _draftStage = DraftCycleStage.instructions;
+                                _syncDraftStatuses();
+                              });
+                            },
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('New draft'),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -2076,29 +2836,31 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                             ),
-                            IconButton(
-                              tooltip: 'Delete draft',
-                              onPressed: () {
-                                setState(() {
-                                  _drafts.removeWhere(
-                                    (item) =>
-                                        (item['cycle'] as num?)?.toInt() ==
-                                        draftNumber,
-                                  );
-                                  if (_drafts.isEmpty) {
-                                    _status = _assignedTo == null
-                                        ? TaskStatus.notAssigned
-                                        : TaskStatus.assigned;
-                                  }
-                                });
-                              },
-                              icon: const Icon(Icons.delete_outline),
-                            ),
+                            if (!_readOnly && widget.lockedAssigneeId == null)
+                              IconButton(
+                                tooltip: 'Delete draft',
+                                onPressed: () {
+                                  setState(() {
+                                    _drafts.removeWhere(
+                                      (item) =>
+                                          (item['cycle'] as num?)?.toInt() ==
+                                          draftNumber,
+                                    );
+                                    if (_drafts.isEmpty) {
+                                      _status = _assignedTo == null
+                                          ? TaskStatus.notAssigned
+                                          : TaskStatus.assigned;
+                                    }
+                                  });
+                                },
+                                icon: const Icon(Icons.delete_outline),
+                              ),
                           ],
                         ),
                         const SizedBox(height: 8),
                         TextFormField(
                           key: ValueKey('draft-instructions-$draftNumber'),
+                          readOnly: _readOnly,
                           initialValue: draft['instructions']?.toString() ?? '',
                           minLines: 2,
                           maxLines: 4,
@@ -2114,6 +2876,7 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
                         const SizedBox(height: 10),
                         TextFormField(
                           key: ValueKey('draft-link-$draftNumber'),
+                          readOnly: _readOnly,
                           initialValue: draft['draftLink']?.toString() ?? '',
                           keyboardType: TextInputType.url,
                           onChanged: (value) =>
@@ -2149,25 +2912,82 @@ class _TaskWorkflowDialogState extends State<TaskWorkflowDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(_readOnly ? 'Close' : 'Cancel'),
         ),
-        if (_status != TaskStatus.completed)
+        if (_canComplete &&
+            widget.task.status == TaskStatus.completed &&
+            _status == TaskStatus.completed)
+          OutlinedButton.icon(
+            onPressed: _saving ? null : _restore,
+            icon: const Icon(Icons.undo),
+            label: const Text('Restore previous stage'),
+          ),
+        if (_canSubmitForAdminReview &&
+            _status != TaskStatus.completed &&
+            _pendingReviewer != 'admin' &&
+            _pendingReviewer != 'client')
+          OutlinedButton(
+            onPressed: _saving || _assignedTo == null
+                ? null
+                : () => _save(reviewAction: 'admin'),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.send_outlined, size: 18),
+                SizedBox(width: 8),
+                Flexible(child: Text('Send for admin approval')),
+              ],
+            ),
+          ),
+        if (_canComplete &&
+            _status != TaskStatus.completed &&
+            _pendingReviewer == 'admin')
+          OutlinedButton(
+            onPressed: _saving || _assignedTo == null
+                ? null
+                : () => _save(reviewAction: 'client'),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.send_outlined, size: 18),
+                SizedBox(width: 8),
+                Flexible(child: Text('Send to client for approval')),
+              ],
+            ),
+          ),
+        if (_canComplete && _pendingReviewer == 'client')
+          OutlinedButton(
+            onPressed: _saving ? null : () => _save(reviewAction: 'complete'),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.verified_outlined, size: 18),
+                SizedBox(width: 8),
+                Flexible(child: Text('Client approved - move to Completed')),
+              ],
+            ),
+          ),
+        if (_canComplete &&
+            _status != TaskStatus.completed &&
+            _pendingReviewer == null &&
+            _drafts.isEmpty)
           OutlinedButton.icon(
             onPressed: _saving || _assignedTo == null ? null : _complete,
             icon: const Icon(Icons.check_circle_outline),
             label: const Text('Complete'),
           ),
-        FilledButton.icon(
-          onPressed: _saving ? null : _save,
-          icon: _saving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.save_outlined),
-          label: const Text('Save changes'),
-        ),
+        if (!_readOnly)
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined),
+            label: const Text('Save changes'),
+          ),
       ],
     );
   }

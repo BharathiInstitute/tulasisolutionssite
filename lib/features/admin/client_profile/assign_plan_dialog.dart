@@ -6,6 +6,8 @@ import 'package:tulasisolutionssite/core/constants/enums.dart';
 import 'package:tulasisolutionssite/core/models/models.dart';
 import 'package:tulasisolutionssite/core/providers/providers.dart';
 import 'package:tulasisolutionssite/core/widgets/feature_progress_widgets.dart';
+import '../../../core/tasks/task_workflow.dart';
+import '../../../core/widgets/retained_task_edits.dart';
 
 /// A single editable feature row: an optional category + the feature text.
 class _FeatureFieldControllers {
@@ -76,9 +78,8 @@ class _FeatureListEditor extends StatelessWidget {
                   ? const <String>[]
                   : planFeatureSubcategories[selectedCategory] ??
                         const <String>[];
-              final selectedSubcategory = subcategories.contains(
-                selection.subcategory,
-              )
+              final selectedSubcategory =
+                  subcategories.contains(selection.subcategory)
                   ? selection.subcategory
                   : subcategories.firstOrNull;
               return Padding(
@@ -92,6 +93,7 @@ class _FeatureListEditor extends StatelessWidget {
                         children: [
                           DropdownButtonFormField<String>(
                             key: ValueKey('feature-category-$index'),
+                            isExpanded: true,
                             initialValue: selectedCategory,
                             decoration: const InputDecoration(
                               labelText: 'Category',
@@ -125,6 +127,7 @@ class _FeatureListEditor extends StatelessWidget {
                               key: ValueKey(
                                 'feature-subcategory-$index-$selectedCategory',
                               ),
+                              isExpanded: true,
                               initialValue: selectedSubcategory,
                               decoration: const InputDecoration(
                                 labelText: 'Subcategory',
@@ -181,12 +184,16 @@ class AssignPlanDialog extends ConsumerStatefulWidget {
   final List<Client> clients;
   final List<PlanTemplate> templates;
   final Plan? existing;
+  final Map<String, String> retainedEdits;
+  final bool replaceFailedSave;
 
   const AssignPlanDialog({
     super.key,
     required this.clients,
     required this.templates,
     this.existing,
+    this.retainedEdits = const {},
+    this.replaceFailedSave = false,
   });
 
   @override
@@ -329,7 +336,7 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
                     : ClientTaskSource.template,
               ),
       ];
-      final plan = Plan(
+      var plan = Plan(
         id: widget.existing?.id ?? const Uuid().v4(),
         clientId: _clientId,
         templateId: _templateId,
@@ -344,12 +351,32 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
         startDate: _startDate,
         endDate: _endDate,
       );
-      final service = ref.read(firestoreServiceProvider);
-      if (widget.existing != null) {
-        await service.updatePlan(plan);
-      } else {
-        await service.createPlan(plan);
+      final createdAt = DateTime.now();
+      final actor = ref.read(currentUserProfileProvider).valueOrNull;
+      for (final feature in features) {
+        if (widget.existing?.features.contains(feature) != true) {
+          plan = recordTaskCreation(
+            plan,
+            feature,
+            actor: actor,
+            now: createdAt,
+          );
+        }
       }
+      final service = ref.read(firestoreServiceProvider);
+      final submitted = plan;
+      final existing = widget.existing;
+      ref
+          .read(taskSavesProvider.notifier)
+          .submit(
+            desired: submitted,
+            previous: existing,
+            label: submitted.name,
+            replaceFailed: widget.replaceFailedSave,
+            persist: () => existing != null
+                ? service.updatePlan(submitted, previous: existing)
+                : service.createPlan(submitted, ifAbsent: true),
+          );
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) setState(() => _error = 'Error: $e');
@@ -369,6 +396,7 @@ class _AssignPlanDialogState extends ConsumerState<AssignPlanDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              RetainedTaskEdits(edits: widget.retainedEdits),
               DropdownButtonFormField<String>(
                 initialValue: _clientId,
                 items: widget.clients
